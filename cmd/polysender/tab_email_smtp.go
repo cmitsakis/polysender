@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/oklog/ulid/v2"
+	bolt "go.etcd.io/bbolt"
 
 	"go.polysender.org/internal/dbutil"
 	container2 "go.polysender.org/internal/fyneutil/container"
@@ -24,93 +25,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 	refreshChan := make(chan struct{}, 1)
 
 	newAccountBtn := widget.NewButtonWithIcon("New Account", theme.ContentAddIcon(), func() {
-		fields := []form.FormField{
-			{Name: "Host*"},
-			{Name: "Port*"},
-			{Name: "Username*"},
-			{Name: "Password*"},
-			{Name: "Connection Encryption*", Type: form.FormFieldTypeRadio, Options: []string{"TLS", "STARTTLS", "INSECURE"}},
-			{Name: "Authentication*", Type: form.FormFieldTypeRadio, Options: []string{"PLAIN", "NONE"}, Description: "Select PLAIN. NONE is for testing purposes"},
-			{Name: "HELO/EHLO host name", Description: "Optional. If not set, 'localhost' is used"},
-			{Name: "Send limit per minute"},
-			{Name: "Send limit per hour"},
-			{Name: "Send limit per day", Description: "0 = no limit"},
-			{Name: "SMTP connection reuse count limit", Description: "0 or 1 disables connection reuse.\n2+ will fail if the SMTP server\ndoes not support it."},
-		}
-		form.ShowFormPopup(w, "New SMTP Account", "Enter your SMTP server details", fields, func(inputValues []string) error {
-			port, err := strconv.Atoi(inputValues[1])
-			if err != nil {
-				return logAndReturnError(fmt.Errorf("invalid port: %s", err))
-			}
-			if port < 0 || port > 65535 {
-				return logAndReturnError(fmt.Errorf("invalid port: value should be between 0 and 65535"))
-			}
-			if inputValues[4] == "" {
-				return logAndReturnError(fmt.Errorf("choose connection encryption"))
-			}
-			if inputValues[5] == "" {
-				return logAndReturnError(fmt.Errorf("choose authentication type"))
-			}
-			var limitPerMinute uint64
-			if inputValues[7] != "" {
-				limitPerMinute, err = strconv.ParseUint(inputValues[7], 10, 32)
-				if err != nil {
-					return logAndReturnError(fmt.Errorf("limit per minute: invalid value: %s", err))
-				}
-			}
-			var limitPerHour uint64
-			if inputValues[8] != "" {
-				limitPerHour, err = strconv.ParseUint(inputValues[8], 10, 32)
-				if err != nil {
-					return logAndReturnError(fmt.Errorf("limit per hour: invalid value: %s", err))
-				}
-				if limitPerHour > 0 && limitPerMinute == 0 {
-					return logAndReturnError(fmt.Errorf("you cannot set limit per hour without setting limit per minute"))
-				}
-			}
-			var limitPerDay uint64
-			if inputValues[9] != "" {
-				limitPerDay, err = strconv.ParseUint(inputValues[9], 10, 32)
-				if err != nil {
-					return logAndReturnError(fmt.Errorf("limit per day: invalid value': %s", err))
-				}
-				if limitPerDay > 0 && limitPerMinute == 0 {
-					return logAndReturnError(fmt.Errorf("you cannot set limit per day without setting limit per minute"))
-				}
-			}
-			var smtpConnectionReuseCountLimit uint64
-			if inputValues[10] != "" {
-				smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
-				if err != nil {
-					return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
-				}
-			}
-			id, err := ulid.New(ulid.Timestamp(time.Now()), crand.Reader)
-			if err != nil {
-				return logAndReturnError(fmt.Errorf("Cannot create broadcast: %s", err))
-			}
-			a := email.SMTPAccount{
-				ID:                        id,
-				Host:                      inputValues[0],
-				Port:                      port,
-				Username:                  inputValues[2],
-				Password:                  inputValues[3],
-				ConnectionEncryption:      inputValues[4],
-				AuthType:                  inputValues[5],
-				HELOHost:                  inputValues[6],
-				LimitPerMinute:            int(limitPerMinute),
-				LimitPerHour:              int(limitPerHour),
-				LimitPerDay:               int(limitPerDay),
-				ConnectionReuseCountLimit: int(smtpConnectionReuseCountLimit),
-			}
-			loggerDebug.Println("[DEBUG] calling store.Save", a)
-			err = dbutil.InsertSaveable(db, a)
-			if err != nil {
-				return logAndReturnError(fmt.Errorf("cannot write to database: %s", err))
-			}
-			refreshChan <- struct{}{}
-			return nil
-		})
+		smtpAccountNewOrEdit(w, db, nil, refreshChan)
 	})
 
 	tablePage := container2.NewTable(
@@ -128,94 +43,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 				Name: "Edit",
 				Func: func(v dbutil.Saveable, refreshChan chan<- struct{}) func() {
 					return func() {
-						var a email.SMTPAccount
-						err := dbutil.GetByKey(db, v.DBKey(), &a)
-						if err != nil { // don't ignore dbutil.ErrNotFound
-							logAndShowError(fmt.Errorf("database error: %s", err), w)
-							return
-						}
-						fields := []form.FormField{
-							{Name: "Host*", ExistingValue: a.Host},
-							{Name: "Port*", ExistingValue: strconv.Itoa(a.Port)},
-							{Name: "Username*", ExistingValue: a.Username},
-							{Name: "Password*", ExistingValue: a.Password},
-							{Name: "Connection Encryption*", Type: form.FormFieldTypeRadio, ExistingValue: a.ConnectionEncryption, Options: []string{"TLS", "STARTTLS", "INSECURE"}},
-							{Name: "Authentication*", Type: form.FormFieldTypeRadio, ExistingValue: a.AuthType, Options: []string{"PLAIN", "NONE"}, Description: "Select PLAIN. NONE is for testing purposes"},
-							{Name: "HELO/EHLO host name", ExistingValue: a.HELOHost, Description: "Optional. If not set, 'localhost' is used"},
-							{Name: "Send limit per minute", ExistingValue: strconv.Itoa(a.LimitPerMinute)},
-							{Name: "Send limit per hour", ExistingValue: strconv.Itoa(a.LimitPerHour)},
-							{Name: "Send limit per day", ExistingValue: strconv.Itoa(a.LimitPerDay), Description: "0 = no limit"},
-							{Name: "SMTP connection reuse count limit", ExistingValue: strconv.Itoa(a.ConnectionReuseCountLimit), Description: "0 or 1 disables connection reuse.\n2+ will fail if the SMTP server\ndoes not support it."},
-						}
-						form.ShowFormPopup(w, "Edit SMTP Account", "Enter your SMTP server details", fields, func(inputValues []string) error {
-							port, err := strconv.Atoi(inputValues[1])
-							if err != nil {
-								return logAndReturnError(fmt.Errorf("invalid port: %s", err))
-							}
-							if port < 0 || port > 65535 {
-								return logAndReturnError(fmt.Errorf("invalid port: value should be between 0 and 65535"))
-							}
-							if inputValues[4] == "" {
-								return logAndReturnError(fmt.Errorf("choose connection encryption"))
-							}
-							if inputValues[5] == "" {
-								return logAndReturnError(fmt.Errorf("choose authentication type"))
-							}
-							var limitPerMinute uint64
-							if inputValues[7] != "" {
-								limitPerMinute, err = strconv.ParseUint(inputValues[7], 10, 32)
-								if err != nil {
-									return logAndReturnError(fmt.Errorf("limit per minute: invalid value: %s", err))
-								}
-							}
-							var limitPerHour uint64
-							if inputValues[8] != "" {
-								limitPerHour, err = strconv.ParseUint(inputValues[8], 10, 32)
-								if err != nil {
-									return logAndReturnError(fmt.Errorf("limit per hour: invalid value: %s", err))
-								}
-								if limitPerHour > 0 && limitPerMinute == 0 {
-									return logAndReturnError(fmt.Errorf("you cannot set limit per hour without setting limit per minute"))
-								}
-							}
-							var limitPerDay uint64
-							if inputValues[9] != "" {
-								limitPerDay, err = strconv.ParseUint(inputValues[9], 10, 32)
-								if err != nil {
-									return logAndReturnError(fmt.Errorf("limit per day: invalid value: %s", err))
-								}
-								if limitPerDay > 0 && limitPerMinute == 0 {
-									return logAndReturnError(fmt.Errorf("you cannot set limit per day without setting limit per minute"))
-								}
-							}
-							var smtpConnectionReuseCountLimit uint64
-							if inputValues[10] != "" {
-								smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
-								if err != nil {
-									return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
-								}
-							}
-							a2 := email.SMTPAccount{
-								ID:                        a.ID,
-								Host:                      inputValues[0],
-								Port:                      port,
-								Username:                  inputValues[2],
-								Password:                  inputValues[3],
-								ConnectionEncryption:      inputValues[4],
-								AuthType:                  inputValues[5],
-								HELOHost:                  inputValues[6],
-								LimitPerMinute:            int(limitPerMinute),
-								LimitPerHour:              int(limitPerHour),
-								LimitPerDay:               int(limitPerDay),
-								ConnectionReuseCountLimit: int(smtpConnectionReuseCountLimit),
-							}
-							err = dbutil.UpsertSaveable(db, a2)
-							if err != nil {
-								return logAndReturnError(fmt.Errorf("cannot write to database: %s", err))
-							}
-							refreshChan <- struct{}{}
-							return nil
-						})
+						smtpAccountNewOrEdit(w, db, v.DBKey(), refreshChan)
 					}
 				},
 			}, {
@@ -263,4 +91,113 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 
 	content := container.NewBorder(newAccountBtn, nil, nil, nil, tablePage)
 	return container.NewTabItemWithIcon("SMTP", theme.MailComposeIcon(), content)
+}
+
+func smtpAccountNewOrEdit(w fyne.Window, db *bolt.DB, existingKey []byte, refreshChan chan<- struct{}) {
+	var a email.SMTPAccount
+	if existingKey != nil {
+		err := dbutil.GetByKey(db, existingKey, &a)
+		if err != nil { // don't ignore dbutil.ErrNotFound
+			logAndShowError(fmt.Errorf("database error: %s", err), w)
+			return
+		}
+	}
+	fields := []form.FormField{
+		{Name: "Host*", ExistingValue: a.Host},
+		{Name: "Port*", ExistingValue: itoaNonZero(a.Port)},
+		{Name: "Username*", ExistingValue: a.Username},
+		{Name: "Password*", ExistingValue: a.Password},
+		{Name: "Connection Encryption*", Type: form.FormFieldTypeRadio, ExistingValue: a.ConnectionEncryption, Options: []string{"TLS", "STARTTLS", "INSECURE"}},
+		{Name: "Authentication*", Type: form.FormFieldTypeRadio, ExistingValue: a.AuthType, Options: []string{"PLAIN", "NONE"}, Description: "Select PLAIN. NONE is for testing purposes"},
+		{Name: "HELO/EHLO host name", ExistingValue: a.HELOHost, Description: "Optional. If not set, 'localhost' is used"},
+		{Name: "Send limit per minute", ExistingValue: itoaNonZero(a.LimitPerMinute)},
+		{Name: "Send limit per hour", ExistingValue: itoaNonZero(a.LimitPerHour)},
+		{Name: "Send limit per day", ExistingValue: itoaNonZero(a.LimitPerDay), Description: "0 = no limit"},
+		{Name: "SMTP connection reuse count limit", ExistingValue: itoaNonZero(a.ConnectionReuseCountLimit), Description: "0 or 1 disables connection reuse.\n2+ will fail if the SMTP server\ndoes not support it."},
+	}
+	form.ShowFormPopup(w, "Edit SMTP Account", "Enter your SMTP server details", fields, func(inputValues []string) error {
+		port, err := strconv.Atoi(inputValues[1])
+		if err != nil {
+			return logAndReturnError(fmt.Errorf("invalid port: %s", err))
+		}
+		if port < 0 || port > 65535 {
+			return logAndReturnError(fmt.Errorf("invalid port: value should be between 0 and 65535"))
+		}
+		if inputValues[4] == "" {
+			return logAndReturnError(fmt.Errorf("choose connection encryption"))
+		}
+		if inputValues[5] == "" {
+			return logAndReturnError(fmt.Errorf("choose authentication type"))
+		}
+		var limitPerMinute uint64
+		if inputValues[7] != "" {
+			limitPerMinute, err = strconv.ParseUint(inputValues[7], 10, 32)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("limit per minute: invalid value: %s", err))
+			}
+		}
+		var limitPerHour uint64
+		if inputValues[8] != "" {
+			limitPerHour, err = strconv.ParseUint(inputValues[8], 10, 32)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("limit per hour: invalid value: %s", err))
+			}
+			if limitPerHour > 0 && limitPerMinute == 0 {
+				return logAndReturnError(fmt.Errorf("you cannot set limit per hour without setting limit per minute"))
+			}
+		}
+		var limitPerDay uint64
+		if inputValues[9] != "" {
+			limitPerDay, err = strconv.ParseUint(inputValues[9], 10, 32)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("limit per day: invalid value: %s", err))
+			}
+			if limitPerDay > 0 && limitPerMinute == 0 {
+				return logAndReturnError(fmt.Errorf("you cannot set limit per day without setting limit per minute"))
+			}
+		}
+		var smtpConnectionReuseCountLimit uint64
+		if inputValues[10] != "" {
+			smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
+			}
+		}
+		var id ulid.ULID
+		if existingKey == nil {
+			id, err = ulid.New(ulid.Timestamp(time.Now()), crand.Reader)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("Cannot create broadcast: %s", err))
+			}
+		} else {
+			id = a.ID
+		}
+		a2 := email.SMTPAccount{
+			ID:                        id,
+			Host:                      inputValues[0],
+			Port:                      port,
+			Username:                  inputValues[2],
+			Password:                  inputValues[3],
+			ConnectionEncryption:      inputValues[4],
+			AuthType:                  inputValues[5],
+			HELOHost:                  inputValues[6],
+			LimitPerMinute:            int(limitPerMinute),
+			LimitPerHour:              int(limitPerHour),
+			LimitPerDay:               int(limitPerDay),
+			ConnectionReuseCountLimit: int(smtpConnectionReuseCountLimit),
+		}
+		err = dbutil.UpsertSaveable(db, a2)
+		if err != nil {
+			return logAndReturnError(fmt.Errorf("cannot write to database: %s", err))
+		}
+		refreshChan <- struct{}{}
+		return nil
+	})
+}
+
+func itoaNonZero(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }
