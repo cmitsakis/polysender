@@ -31,6 +31,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 			{Name: "Password*"},
 			{Name: "Connection Encryption*", Type: form.FormFieldTypeRadio, Options: []string{"TLS", "STARTTLS", "INSECURE"}},
 			{Name: "Authentication*", Type: form.FormFieldTypeRadio, Options: []string{"PLAIN", "NONE"}, Description: "Select PLAIN. NONE is for testing purposes"},
+			{Name: "HELO/EHLO host name", Description: "Optional. If not set, 'localhost' is used"},
 			{Name: "Send limit per minute"},
 			{Name: "Send limit per hour"},
 			{Name: "Send limit per day", Description: "0 = no limit"},
@@ -51,15 +52,15 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 				return logAndReturnError(fmt.Errorf("choose authentication type"))
 			}
 			var limitPerMinute uint64
-			if inputValues[6] != "" {
-				limitPerMinute, err = strconv.ParseUint(inputValues[6], 10, 32)
+			if inputValues[7] != "" {
+				limitPerMinute, err = strconv.ParseUint(inputValues[7], 10, 32)
 				if err != nil {
 					return logAndReturnError(fmt.Errorf("limit per minute: invalid value: %s", err))
 				}
 			}
 			var limitPerHour uint64
-			if inputValues[7] != "" {
-				limitPerHour, err = strconv.ParseUint(inputValues[7], 10, 32)
+			if inputValues[8] != "" {
+				limitPerHour, err = strconv.ParseUint(inputValues[8], 10, 32)
 				if err != nil {
 					return logAndReturnError(fmt.Errorf("limit per hour: invalid value: %s", err))
 				}
@@ -68,8 +69,8 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 				}
 			}
 			var limitPerDay uint64
-			if inputValues[8] != "" {
-				limitPerDay, err = strconv.ParseUint(inputValues[8], 10, 32)
+			if inputValues[9] != "" {
+				limitPerDay, err = strconv.ParseUint(inputValues[9], 10, 32)
 				if err != nil {
 					return logAndReturnError(fmt.Errorf("limit per day: invalid value': %s", err))
 				}
@@ -78,8 +79,8 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 				}
 			}
 			var smtpConnectionReuseCountLimit uint64
-			if inputValues[9] != "" {
-				smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[9], 10, 32)
+			if inputValues[10] != "" {
+				smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
 				if err != nil {
 					return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
 				}
@@ -96,6 +97,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 				Password:                  inputValues[3],
 				ConnectionEncryption:      inputValues[4],
 				AuthType:                  inputValues[5],
+				HELOHost:                  inputValues[6],
 				LimitPerMinute:            int(limitPerMinute),
 				LimitPerHour:              int(limitPerHour),
 				LimitPerDay:               int(limitPerDay),
@@ -139,6 +141,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 							{Name: "Password*", ExistingValue: a.Password},
 							{Name: "Connection Encryption*", Type: form.FormFieldTypeRadio, ExistingValue: a.ConnectionEncryption, Options: []string{"TLS", "STARTTLS", "INSECURE"}},
 							{Name: "Authentication*", Type: form.FormFieldTypeRadio, ExistingValue: a.AuthType, Options: []string{"PLAIN", "NONE"}, Description: "Select PLAIN. NONE is for testing purposes"},
+							{Name: "HELO/EHLO host name", ExistingValue: a.HELOHost, Description: "Optional. If not set, 'localhost' is used"},
 							{Name: "Send limit per minute", ExistingValue: strconv.Itoa(a.LimitPerMinute)},
 							{Name: "Send limit per hour", ExistingValue: strconv.Itoa(a.LimitPerHour)},
 							{Name: "Send limit per day", ExistingValue: strconv.Itoa(a.LimitPerDay), Description: "0 = no limit"},
@@ -159,15 +162,15 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 								return logAndReturnError(fmt.Errorf("choose authentication type"))
 							}
 							var limitPerMinute uint64
-							if inputValues[6] != "" {
-								limitPerMinute, err = strconv.ParseUint(inputValues[6], 10, 32)
+							if inputValues[7] != "" {
+								limitPerMinute, err = strconv.ParseUint(inputValues[7], 10, 32)
 								if err != nil {
 									return logAndReturnError(fmt.Errorf("limit per minute: invalid value: %s", err))
 								}
 							}
 							var limitPerHour uint64
-							if inputValues[7] != "" {
-								limitPerHour, err = strconv.ParseUint(inputValues[7], 10, 32)
+							if inputValues[8] != "" {
+								limitPerHour, err = strconv.ParseUint(inputValues[8], 10, 32)
 								if err != nil {
 									return logAndReturnError(fmt.Errorf("limit per hour: invalid value: %s", err))
 								}
@@ -176,8 +179,8 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 								}
 							}
 							var limitPerDay uint64
-							if inputValues[8] != "" {
-								limitPerDay, err = strconv.ParseUint(inputValues[8], 10, 32)
+							if inputValues[9] != "" {
+								limitPerDay, err = strconv.ParseUint(inputValues[9], 10, 32)
 								if err != nil {
 									return logAndReturnError(fmt.Errorf("limit per day: invalid value: %s", err))
 								}
@@ -186,8 +189,8 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 								}
 							}
 							var smtpConnectionReuseCountLimit uint64
-							if inputValues[9] != "" {
-								smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[9], 10, 32)
+							if inputValues[10] != "" {
+								smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
 								if err != nil {
 									return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
 								}
@@ -200,6 +203,7 @@ func tabEmailSMTP(w fyne.Window) *container.TabItem {
 								Password:                  inputValues[3],
 								ConnectionEncryption:      inputValues[4],
 								AuthType:                  inputValues[5],
+								HELOHost:                  inputValues[6],
 								LimitPerMinute:            int(limitPerMinute),
 								LimitPerHour:              int(limitPerHour),
 								LimitPerDay:               int(limitPerDay),

@@ -31,6 +31,7 @@ type SMTPAccount struct {
 	AuthType                  string
 	ConnectionEncryption      string
 	TLSInsecureSkipVerify     bool
+	HELOHost                  string
 	LimitPerMinute            int
 	LimitPerHour              int
 	LimitPerDay               int
@@ -171,12 +172,18 @@ func (c *SenderClientSMTP) PreSend(ctx context.Context) error {
 	default:
 		return fmt.Errorf("invalid connection encryption value: %v", c.SMTPAccount.ConnectionEncryption)
 	}
+	if c.SMTPAccount.HELOHost != "" {
+		err = c.conn.Hello(c.SMTPAccount.HELOHost)
+		if err != nil {
+			_ = c.PostSend(ctx)
+			return fmt.Errorf("SMTP HELO failed: %s", err)
+		}
+	}
 	err = c.conn.Noop()
 	if err != nil {
 		_ = c.PostSend(ctx)
 		return fmt.Errorf("SMTP Noop failed: %s", err)
 	}
-	// TODO: EHLO
 	if c.SMTPAccount.AuthType == "NONE" {
 		return nil
 	}
