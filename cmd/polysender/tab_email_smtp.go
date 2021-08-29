@@ -120,8 +120,8 @@ func smtpAccountNewOrEdit(w fyne.Window, db *bolt.DB, existingKey []byte, refres
 		if err != nil {
 			return logAndReturnError(fmt.Errorf("invalid port: %s", err))
 		}
-		if port < 0 || port > 65535 {
-			return logAndReturnError(fmt.Errorf("invalid port: value should be between 0 and 65535"))
+		if port < 1 || port > 65535 {
+			return logAndReturnError(fmt.Errorf("invalid port: value should be between 1 and 65535"))
 		}
 		if inputValues[4] == "" {
 			return logAndReturnError(fmt.Errorf("choose connection encryption"))
