@@ -108,7 +108,7 @@ func Dispatcher(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, logger
 				continue
 			}
 			// log.Printf("[DEBUG] [Dispatcher] r.NextIndex: %d r.Length: %d err: %s\n", r.NextIndex, r.Length, err)
-			if err == nil && r.NextIndex == r.Length {
+			if err == nil && r.NextIndex == len(b.Contacts) {
 				loggerDebugB.Println("broadcast has finished - ignoring")
 				continue
 			}

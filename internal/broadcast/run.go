@@ -26,7 +26,6 @@ import (
 type Run struct {
 	BroadcastID  ulid.ULID
 	NextIndex    int
-	Length       int
 	broadcast    Broadcast
 	senderClient gateway.SenderClient
 }
@@ -60,7 +59,6 @@ func newRun(db *bolt.DB, b Broadcast) (Run, error) {
 			broadcast:    b,
 			senderClient: senderClient,
 			NextIndex:    existingRun.NextIndex,
-			Length:       len(b.Contacts),
 		}, nil
 	} else if b.GatewayType == tableNameDeviceAndroid {
 		senderClient, err := android.NewSenderClientFromKey(db, b.GatewayKey)
@@ -72,7 +70,6 @@ func newRun(db *bolt.DB, b Broadcast) (Run, error) {
 			broadcast:    b,
 			senderClient: senderClient,
 			NextIndex:    existingRun.NextIndex,
-			Length:       len(b.Contacts),
 		}, nil
 	}
 	return Run{}, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
@@ -144,7 +141,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 	if bRun.senderClient.GetLimitPerMinute() > 0 {
 		μ = time.Minute / time.Duration(bRun.senderClient.GetLimitPerMinute())
 	}
-	for i := bRun.NextIndex; i < bRun.Length; i++ {
+	for i := bRun.NextIndex; i < len(bRun.broadcast.Contacts); i++ {
 		loggerDebugRunI := log.New(loggerDebug.Writer(), loggerDebugRun.Prefix()+fmt.Sprintf("[i=%d] ", i), loggerDebug.Flags())
 	restart:
 		// check if current time is within send hours

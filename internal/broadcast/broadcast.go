@@ -239,16 +239,16 @@ func (b *Broadcast) ReadStatusFromTx(tx *bolt.Tx) error {
 		}
 		return nil
 	} else if existsInRunning {
-		b.status = fmt.Sprintf("%d/%d sent - running", run.NextIndex, run.Length)
+		b.status = fmt.Sprintf("%d/%d sent - running", run.NextIndex, len(b.Contacts))
 		return nil
-	} else if run.NextIndex == run.Length {
-		b.status = fmt.Sprintf("%d/%d sent - finished", run.NextIndex, run.Length)
+	} else if run.NextIndex == len(b.Contacts) {
+		b.status = fmt.Sprintf("%d/%d sent - finished", run.NextIndex, len(b.Contacts))
 		return nil
 		//} else if !b.SendDateTo.IsZero() && now.After(b.SendDateTo.Add(24*time.Hour)) {
 		//	b.status = fmt.Sprintf("%d/%d sent - expired", run.NextIndex, len(b.Contacts))
 		//	return nil
 	} else {
-		b.status = fmt.Sprintf("%d/%d sent - paused", run.NextIndex, run.Length)
+		b.status = fmt.Sprintf("%d/%d sent - paused", run.NextIndex, len(b.Contacts))
 		return nil
 	}
 }
