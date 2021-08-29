@@ -260,17 +260,25 @@ func (b Broadcast) GetStatus() string {
 func (b Broadcast) DetailsString(tx *bolt.Tx) (string, error) {
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "ID: %s\n", b.ID.String())
-	fmt.Fprintf(&buf, "Contacts: %d\n", len(b.Contacts))
-	fmt.Fprintf(&buf, "Message subject: %s\n", b.MsgSubject)
-	fmt.Fprintf(&buf, "Message body: %s\n", b.MsgBody)
-	fmt.Fprintf(&buf, "Message body file: %s\n", b.MsgBodyFile)
 	if err := b.ReadStatusFromTx(tx); err != nil {
 		return "", fmt.Errorf("failed to get status: %s", err)
 	}
 	fmt.Fprintf(&buf, "Status: %s\n", b.GetStatus())
+	fmt.Fprintf(&buf, "Contacts: %d\n", len(b.Contacts))
 	fmt.Fprintf(&buf, "Gateway: %s\n", b.GatewayKey)
-	fmt.Fprintf(&buf, "Send date from: %v\n", b.SendDateFrom)
-	fmt.Fprintf(&buf, "Send date to: %v\n", b.SendDateTo)
+	fmt.Fprintf(&buf, "Send date from: %v\n", timeToString(b.SendDateFrom))
+	fmt.Fprintf(&buf, "Send date to: %v\n", timeToString(b.SendDateTo))
 	fmt.Fprintf(&buf, "Send time: %v\n", b.SendHours)
+	fmt.Fprintf(&buf, "Time zone: %v\n", b.Timezone)
+	fmt.Fprintf(&buf, "Message subject: %s\n", b.MsgSubject)
+	fmt.Fprintf(&buf, "Message body file: %s\n", b.MsgBodyFile)
+	fmt.Fprintf(&buf, "Message body: %s\n", b.MsgBody)
 	return buf.String(), nil
+}
+
+func timeToString(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02 15:04:05 MST")
 }
