@@ -25,10 +25,13 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			logAndShowError(fmt.Errorf("database error: %s", err), w)
 			return
 		}
-		form.ShowEntryPopup(w, "Limit per minute", "Maximum number of messages per minute per device (0 = no limit)", "", fmt.Sprintf("%v", settingLimitPerMinute), func(inputText string) error {
+		form.ShowEntryPopup(w, "Limit per minute", "Maximum number of messages per minute per device", "", fmt.Sprintf("%v", settingLimitPerMinute), func(inputText string) error {
 			inputUint, err := strconv.ParseUint(inputText, 10, 32)
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("invalid value: %s", err))
+			}
+			if inputUint == 0 {
+				return logAndReturnError(fmt.Errorf("invalid value 0"))
 			}
 			err = dbutil.UpsertSaveable(db, android.SettingLimitPerMinute(inputUint))
 			if err != nil {
@@ -38,15 +41,7 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			labelUpdates <- strconv.FormatUint(inputUint, 10)
 			return nil
 		})
-	}, func(labelUpdates chan<- string) {
-		err := dbutil.UpsertSaveable(db, android.SettingLimitPerMinute(0))
-		if err != nil {
-			logAndShowError(fmt.Errorf("database error: %s", err), w)
-			return
-		}
-		// refreshChan <- struct{}{}
-		labelUpdates <- strconv.FormatUint(0, 10)
-	})
+	}, nil)
 
 	limitPerHourValue := form.NewValue(w, "", func(labelUpdates chan<- string) {
 		var settingLimitPerHour android.SettingLimitPerHour
@@ -55,10 +50,13 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			logAndShowError(fmt.Errorf("database error: %s", err), w)
 			return
 		}
-		form.ShowEntryPopup(w, "Limit per hour", "Maximum number of messages per hour per device (0 = no limit)", "", fmt.Sprintf("%v", settingLimitPerHour), func(inputText string) error {
+		form.ShowEntryPopup(w, "Limit per hour", "Maximum number of messages per hour per device", "", fmt.Sprintf("%v", settingLimitPerHour), func(inputText string) error {
 			inputUint, err := strconv.ParseUint(inputText, 10, 32)
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("invalid value: %s", err))
+			}
+			if inputUint == 0 {
+				return logAndReturnError(fmt.Errorf("invalid value 0"))
 			}
 			err = dbutil.UpsertSaveable(db, android.SettingLimitPerHour(inputUint))
 			if err != nil {
@@ -68,15 +66,7 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			labelUpdates <- strconv.FormatUint(inputUint, 10)
 			return nil
 		})
-	}, func(labelUpdates chan<- string) {
-		err := dbutil.UpsertSaveable(db, android.SettingLimitPerHour(0))
-		if err != nil {
-			logAndShowError(fmt.Errorf("database error: %s", err), w)
-			return
-		}
-		// refreshChan <- struct{}{}
-		labelUpdates <- strconv.FormatUint(0, 10)
-	})
+	}, nil)
 
 	limitPerDayValue := form.NewValue(w, "", func(labelUpdates chan<- string) {
 		var settingLimitPerDay android.SettingLimitPerDay
@@ -85,10 +75,13 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			logAndShowError(fmt.Errorf("database error: %s", err), w)
 			return
 		}
-		form.ShowEntryPopup(w, "Limit per day", "Maximum number of messages per day per device (0 = no limit)", "", fmt.Sprintf("%v", settingLimitPerDay), func(inputText string) error {
+		form.ShowEntryPopup(w, "Limit per day", "Maximum number of messages per day per device", "", fmt.Sprintf("%v", settingLimitPerDay), func(inputText string) error {
 			inputUint, err := strconv.ParseUint(inputText, 10, 32)
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("invalid value: %s", err))
+			}
+			if inputUint == 0 {
+				return logAndReturnError(fmt.Errorf("invalid value 0"))
 			}
 			err = dbutil.UpsertSaveable(db, android.SettingLimitPerDay(inputUint))
 			if err != nil {
@@ -98,15 +91,7 @@ func tabSmsAndroidSettings(w fyne.Window) *container.TabItem {
 			labelUpdates <- strconv.FormatUint(inputUint, 10)
 			return nil
 		})
-	}, func(labelUpdates chan<- string) {
-		err := dbutil.UpsertSaveable(db, android.SettingLimitPerDay(0))
-		if err != nil {
-			logAndShowError(fmt.Errorf("database error: %s", err), w)
-			return
-		}
-		// refreshChan <- struct{}{}
-		labelUpdates <- strconv.FormatUint(0, 10)
-	})
+	}, nil)
 
 	go func() {
 		for range refreshChan {

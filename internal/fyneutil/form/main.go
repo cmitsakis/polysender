@@ -19,6 +19,13 @@ func NewValue(w fyne.Window, description string, onEdit func(chan<- string), onC
 			label.SetText(s)
 		}
 	}()
+	if onClear == nil {
+		return container.NewHBox(
+			label,
+			widget.NewButton("Edit", func() { onEdit(labelUpdates) }),
+			widget.NewLabelWithStyle(description, fyne.TextAlignLeading, fyne.TextStyle{Italic: true}),
+		)
+	}
 	return container.NewHBox(
 		label,
 		widget.NewButton("Edit", func() { onEdit(labelUpdates) }),

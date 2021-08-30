@@ -34,8 +34,26 @@ func tabSmsAndroidKde(w fyne.Window) *container.TabItem {
 				Name: "Save",
 				Func: func(v dbutil.Saveable, refreshChan chan<- struct{}) func() {
 					return func() {
+						// check if SMS sending limits have been set
+						var settingLimitPerMinute android.SettingLimitPerMinute
+						var settingLimitPerHour android.SettingLimitPerHour
+						var settingLimitPerDay android.SettingLimitPerDay
+						err := dbutil.GetMulti(
+							db,
+							dbutil.KeyPointer{Key: settingLimitPerMinute.DBKey(), Pointer: &settingLimitPerMinute},
+							dbutil.KeyPointer{Key: settingLimitPerHour.DBKey(), Pointer: &settingLimitPerHour},
+							dbutil.KeyPointer{Key: settingLimitPerDay.DBKey(), Pointer: &settingLimitPerDay},
+						)
+						if err != nil {
+							logAndShowError(fmt.Errorf("database error: %s", err), w)
+						}
+						if settingLimitPerMinute == 0 || settingLimitPerHour == 0 || settingLimitPerDay == 0 {
+							logAndShowError(fmt.Errorf("set SMS sending limits first"), w)
+							return
+						}
+
 						d := v.(*kde.Device)
-						err := dbutil.UpsertSaveable(db, android.FromDeviceable(d))
+						err = dbutil.UpsertSaveable(db, android.FromDeviceable(d))
 						if err != nil {
 							logAndShowError(fmt.Errorf("database error: %s", err), w)
 						}
