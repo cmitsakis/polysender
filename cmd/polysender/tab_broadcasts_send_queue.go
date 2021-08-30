@@ -49,7 +49,6 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 			{Name: "Actions", Actions: true},
 			{Name: "ID", Field: "ID", Width: 270},
 			{Name: "Status", Field: "GetStatus", Width: 170},
-			{Name: "File", Field: "MsgBodyFile", Width: 170},
 			{Name: "Message Subject", Field: "MsgSubject", Width: 220},
 			{Name: "Message Body", Field: "MsgBody", Width: 300},
 		},
