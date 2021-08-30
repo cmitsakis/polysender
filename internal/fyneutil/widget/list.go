@@ -27,7 +27,7 @@ func NewList(refreshChan chan<- struct{}, actions ...Action) *List {
 	l.CreateItem = func() fyne.CanvasObject {
 		c := container.NewHBox()
 		for _, a := range actions {
-			c.Add(widget.NewButton(a.Name, nil))
+			c.Add(widget.NewButtonWithIcon(a.Name, a.Icon, nil))
 		}
 		c.Add(widget.NewLabel(""))
 		return c

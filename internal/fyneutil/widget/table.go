@@ -40,7 +40,7 @@ func NewTable(refreshChan chan<- struct{}, attrs []TableAttribute, actions ...Ac
 		c := container.NewHBox()
 		c.Add(widget.NewLabel(""))
 		for _, a := range actions {
-			c.Add(widget.NewButton(a.Name, nil))
+			c.Add(widget.NewButtonWithIcon(a.Name, a.Icon, nil))
 		}
 		return c
 	}

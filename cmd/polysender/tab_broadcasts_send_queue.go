@@ -48,14 +48,14 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 		[]widget2.TableAttribute{
 			{Name: "Actions", Actions: true},
 			{Name: "ID", Field: "ID", Width: 270},
-			{Name: "Status", Field: "GetStatus", Width: 160},
+			{Name: "Status", Field: "GetStatus", Width: 170},
 			{Name: "File", Field: "MsgBodyFile", Width: 170},
 			{Name: "Message Subject", Field: "MsgSubject", Width: 220},
 			{Name: "Message Body", Field: "MsgBody", Width: 300},
 		},
 		[]widget2.Action{
 			{
-				Name: "View",
+				Icon: theme.InfoIcon(),
 				Func: func(v dbutil.Saveable, refreshChan chan<- struct{}) func() {
 					return func() {
 						var details string
@@ -79,7 +79,7 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 					}
 				},
 			}, {
-				Name: "Sent",
+				Icon: theme.MailComposeIcon(),
 				Func: func(v dbutil.Saveable, refreshChan chan<- struct{}) func() {
 					return func() {
 						var bSends []broadcast.Send
@@ -113,7 +113,7 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 					}
 				},
 			}, {
-				Name: "Delete",
+				Icon: theme.DeleteIcon(),
 				Func: func(v dbutil.Saveable, refreshChan chan<- struct{}) func() {
 					return func() {
 						content := widget.NewLabel("Are you sure you want to delete this broadcast?")
