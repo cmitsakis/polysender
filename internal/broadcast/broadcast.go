@@ -210,7 +210,7 @@ func (b *Broadcast) ReadStatusFromTx(tx *bolt.Tx) error {
 	var run Run
 	err := dbutil.GetByKeyTx(tx, Run{BroadcastID: b.ID}.DBKey(), &run)
 	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return fmt.Errorf("database error")
+		return fmt.Errorf("database error: %s", err)
 	}
 	// lock mutex because we read from runningBroadcasts
 	runningMutex.Lock()
