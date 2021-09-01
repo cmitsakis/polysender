@@ -16,6 +16,83 @@ import (
 	"go.polysender.org/internal/gateway/sms/android"
 )
 
+type dispatcherStatusType int
+
+const (
+	dispatcherInvalid = iota
+	dispatcherRunning
+	dispatcherStopping
+	dispatcherStopped
+)
+
+func (d dispatcherStatusType) String() string {
+	switch d {
+	case dispatcherRunning:
+		return "RUNNING"
+	case dispatcherStopping:
+		return "STOPPING"
+	case dispatcherStopped:
+		return "STOPPED"
+	case dispatcherInvalid:
+		fallthrough
+	default:
+		panic(fmt.Sprintf("invalid dispatcher status: %d", d))
+	}
+}
+
+var (
+	dispatcherCancel     context.CancelFunc
+	dispatcherStatus     dispatcherStatusType
+	DispatcherStatusChan = make(chan dispatcherStatusType, 1)
+	dispatcherMutex      sync.Mutex
+)
+
+func DispatcherStart(db *bolt.DB, loggerInfo, loggerDebug *log.Logger) error {
+	dispatcherMutex.Lock()
+	defer dispatcherMutex.Unlock()
+	if dispatcherStatus == dispatcherRunning {
+		return fmt.Errorf("dispatcher is already running")
+	}
+	if dispatcherStatus == dispatcherStopping {
+		return fmt.Errorf("dispatcher is in the process of stopping")
+	}
+	dispatcherStatus = dispatcherRunning
+	DispatcherStatusChan <- dispatcherStatus
+	loggerInfo.Println("dispatcher started")
+	ctx := context.Background()
+	ctx, dispatcherCancel = context.WithCancel(ctx)
+	go func() {
+		dispatcherLoop(ctx, db, loggerInfo, loggerDebug)
+		dispatcherMutex.Lock()
+		defer dispatcherMutex.Unlock()
+		dispatcherCancel = nil
+		dispatcherStatus = dispatcherStopped
+		loggerInfo.Println("dispatcher stopped")
+		DispatcherStatusChan <- dispatcherStatus
+	}()
+	return nil
+}
+
+func DispatcherStop(loggerInfo, loggerDebug *log.Logger) error {
+	dispatcherMutex.Lock()
+	defer dispatcherMutex.Unlock()
+	if dispatcherCancel == nil {
+		return fmt.Errorf("dispatcher is not running")
+	}
+	dispatcherCancel()
+	dispatcherCancel = nil
+	dispatcherStatus = dispatcherStopping
+	DispatcherStatusChan <- dispatcherStatus
+	loggerInfo.Println("dispatcher stopping")
+	return nil
+}
+
+func DispatcherGetStatus() dispatcherStatusType {
+	dispatcherMutex.Lock()
+	defer dispatcherMutex.Unlock()
+	return dispatcherStatus
+}
+
 var (
 	runningBroadcasts map[string]struct{}
 	runningGateways   map[string]struct{}
@@ -27,11 +104,17 @@ func init() {
 	runningGateways = make(map[string]struct{})
 }
 
-func Dispatcher(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, loggerDebug *log.Logger) {
+func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, loggerDebug *log.Logger) {
 	loggerDebug2 := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+"[Dispatcher] ", loggerDebug.Flags())
 	loggerInfo2 := log.New(loggerInfo.Writer(), loggerInfo.Prefix()+"[Dispatcher] ", loggerInfo.Flags())
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
 	for {
-		time.Sleep(60 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		var bs []Broadcast
 		err := dbutil.ForEach(db, &Broadcast{}, func(k []byte, v interface{}) error {
 			b := v.(Broadcast)

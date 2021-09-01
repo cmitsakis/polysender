@@ -42,6 +42,28 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 	newBroadcastBtn := widget.NewButtonWithIcon("New Broadcast", theme.ContentAddIcon(), func() {
 		showBroadcastWizard1(w, refreshChan)
 	})
+	queueStatusLabel := widget.NewLabel("")
+	stopBtn := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() {
+		go func() {
+			err := broadcast.DispatcherStop(loggerInfo, loggerDebug)
+			if err != nil {
+				logAndShowError(fmt.Errorf("failed to stop dispatcher: %s", err), w)
+			}
+		}()
+	})
+	startBtn := widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), func() {
+		go func() {
+			err := broadcast.DispatcherStart(db, loggerInfo, loggerDebug)
+			if err != nil {
+				logAndShowError(fmt.Errorf("failed to start dispatcher: %s", err), w)
+			}
+		}()
+	})
+	go func() {
+		for status := range broadcast.DispatcherStatusChan {
+			queueStatusLabel.SetText("Status: " + status.String())
+		}
+	}()
 	tablePage := container2.NewTable(
 		w,
 		refreshChan,
@@ -171,11 +193,15 @@ func tabBroadcastsSendQueue(w fyne.Window) *container.TabItem {
 					noticeLabel.SetText("")
 				}
 				t.UpdateAndRefresh(values)
+				func() {
+					queueStatusLabel.SetText("Status: " + broadcast.DispatcherGetStatus().String())
+				}()
 			}
 		},
 	)
 	refreshChan <- struct{}{}
-	content := container.NewBorder(newBroadcastBtn, nil, nil, nil, tablePage)
+	top := container.NewVBox(newBroadcastBtn, container.NewHBox(queueStatusLabel, stopBtn, startBtn))
+	content := container.NewBorder(top, nil, nil, nil, tablePage)
 	return container.NewTabItemWithIcon("Send Queue", theme.MailSendIcon(), content)
 }
 

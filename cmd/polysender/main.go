@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	crand "crypto/rand"
 	"encoding/binary"
 	"flag"
@@ -90,7 +89,11 @@ func main() {
 	}()
 
 	// start distpatcher
-	go broadcast.Dispatcher(context.Background(), db, loggerInfo, loggerDebug)
+	err = broadcast.DispatcherStart(db, loggerInfo, loggerDebug)
+	if err != nil {
+		loggerInfo.Println("failed to start dispatcher:", err)
+		return
+	}
 
 	// start GUI
 	a := app.NewWithID(appID)

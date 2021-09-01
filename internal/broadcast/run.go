@@ -143,6 +143,11 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 	}
 	for i := bRun.NextIndex; i < len(bRun.broadcast.Contacts); i++ {
 		loggerDebugRunI := log.New(loggerDebug.Writer(), loggerDebugRun.Prefix()+fmt.Sprintf("[i=%d] ", i), loggerDebug.Flags())
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("broadcast has stopped")
+		default:
+		}
 	restart:
 		// check if current time is within send hours
 		if b.startableNowUntil(defaultSendHours, defaultTimezone).IsZero() {
@@ -157,7 +162,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 		if bRun.senderClient.GetLimitPerMinute() > 0 {
 			sleepDur := time.Duration(float64(μ) * (1 + rand.ExpFloat64()) / 2)
 			loggerDebugRunI.Printf("sleeping for %v\n", sleepDur)
-			time.Sleep(sleepDur)
+			if sleepCtx(ctx, sleepDur) {
+				return fmt.Errorf("broadcast has stopped")
+			}
 			// count sent in the last minute
 			var count int
 			err := dbutil.GetByTableKey(db, "send_counts", sendCountsKeyCurrentMinute, &count)
@@ -168,7 +175,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 				// duration til minute changes
 				sleepDur := time.Minute - time.Since(time.Now().Truncate(time.Minute))
 				loggerDebugRunI.Printf("sent in the current minute %d - limit reached (%d) - sleeping for %v\n", count, bRun.senderClient.GetLimitPerMinute(), sleepDur)
-				time.Sleep(sleepDur)
+				if sleepCtx(ctx, sleepDur) {
+					return fmt.Errorf("broadcast has stopped")
+				}
 				goto restart
 			}
 			loggerDebugRunI.Printf("sent in the current minute: %d\n", count)
@@ -228,7 +237,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 				// sleep for 1*μ2, 4*μ2, 16*μ2 seconds
 				sleepDur := time.Duration(math.Pow(4, float64(attempt-1))) * μ2
 				loggerDebugRunIA.Printf("sleeping for %v\n", sleepDur)
-				time.Sleep(sleepDur)
+				if sleepCtx(ctx, sleepDur) {
+					return fmt.Errorf("broadcast has stopped")
+				}
 			}
 
 			var sent int
@@ -308,4 +319,15 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 	}
 	loggerDebugRun.Println("run finished")
 	return nil
+}
+
+func sleepCtx(ctx context.Context, dur time.Duration) bool {
+	ticker := time.NewTicker(dur)
+	defer ticker.Stop()
+	select {
+	case <-ctx.Done():
+		return true
+	case <-ticker.C:
+		return false
+	}
 }
