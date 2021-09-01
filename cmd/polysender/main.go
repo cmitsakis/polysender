@@ -23,7 +23,7 @@ import (
 
 const (
 	appID      = "org.polysender"
-	appVersion = "0.1.0"
+	appVersion = "0.2.0"
 )
 
 var (
