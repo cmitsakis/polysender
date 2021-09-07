@@ -24,10 +24,10 @@ import (
 )
 
 type Run struct {
-	BroadcastID  ulid.ULID
-	NextIndex    int
-	broadcast    Broadcast
-	senderClient gateway.SenderClient
+	BroadcastID ulid.ULID
+	NextIndex   int
+	broadcast   Broadcast
+	gateway     gateway.Gateway
 }
 
 func (b Run) DBTable() string {
@@ -49,30 +49,42 @@ func newRun(db *bolt.DB, b Broadcast) (Run, error) {
 	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
 		return Run{}, fmt.Errorf("cannot read broadcast run from database: %s", err)
 	}
-	if b.GatewayType == tableNameEmailIdentity {
-		senderClient, err := email.NewSenderClientFromKey(db, b.GatewayKey)
-		if err != nil {
-			return Run{}, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
-		}
-		return Run{
-			BroadcastID:  b.ID,
-			broadcast:    b,
-			senderClient: senderClient,
-			NextIndex:    existingRun.NextIndex,
-		}, nil
-	} else if b.GatewayType == tableNameDeviceAndroid {
-		senderClient, err := android.NewSenderClientFromKey(db, b.GatewayKey)
-		if err != nil {
-			return Run{}, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
-		}
-		return Run{
-			BroadcastID:  b.ID,
-			broadcast:    b,
-			senderClient: senderClient,
-			NextIndex:    existingRun.NextIndex,
-		}, nil
+	r := Run{
+		BroadcastID: b.ID,
+		broadcast:   b,
+		NextIndex:   existingRun.NextIndex,
 	}
-	return Run{}, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
+	if b.GatewayType == tableNameEmailIdentity {
+		r.gateway, err = email.NewSMTPAccountFromKey(db, b.GatewayKey)
+		if err != nil {
+			return r, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
+		}
+	} else if b.GatewayType == tableNameDeviceAndroid {
+		r.gateway, err = android.NewDeviceFromKey(db, b.GatewayKey)
+		if err != nil {
+			return r, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
+		}
+	} else {
+		return r, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
+	}
+	return r, nil
+}
+
+func newSenderClient(db *bolt.DB, r Run) (gateway.SenderClient, error) {
+	if r.broadcast.GatewayType == tableNameEmailIdentity {
+		senderClient, err := email.NewSenderClientFromKey(db, r.broadcast.GatewayKey)
+		if err != nil {
+			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", r.broadcast.GatewayKey, err)
+		}
+		return senderClient, nil
+	} else if r.broadcast.GatewayType == tableNameDeviceAndroid {
+		senderClient, ok := r.gateway.(gateway.SenderClient)
+		if !ok {
+			return nil, fmt.Errorf("type assertion failed. r.gateway is not gateway.SenderClient")
+		}
+		return senderClient, nil
+	}
+	return nil, fmt.Errorf("unknown b.GatewayType %s", r.broadcast.GatewayType)
 }
 
 type Send struct {
@@ -119,12 +131,16 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 	if err != nil {
 		return fmt.Errorf("broadcast %s could not be started - newRun() failed: %s", b.ID.String(), err)
 	}
-	err = bRun.senderClient.PreSend(ctx)
+	senderClient, err := newSenderClient(db, bRun)
+	if err != nil {
+		return fmt.Errorf("newSenderClient() failed: %w", err)
+	}
+	err = senderClient.PreSend(ctx)
 	if err != nil {
 		return fmt.Errorf("preSend() failed: %w", err)
 	}
 	defer func() {
-		err = bRun.senderClient.PostSend(ctx)
+		err = senderClient.PostSend(ctx)
 		if err != nil {
 			loggerDebugRun.Printf("PostSend() failed: %v\n", err)
 		}
@@ -138,8 +154,8 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 		return fmt.Errorf("template.Parse failed: %s", err)
 	}
 	var μ time.Duration
-	if bRun.senderClient.GetLimitPerMinute() > 0 {
-		μ = time.Minute / time.Duration(bRun.senderClient.GetLimitPerMinute())
+	if bRun.gateway.GetLimitPerMinute() > 0 {
+		μ = time.Minute / time.Duration(bRun.gateway.GetLimitPerMinute())
 	}
 	for i := bRun.NextIndex; i < len(bRun.broadcast.Contacts); i++ {
 		loggerDebugRunI := log.New(loggerDebug.Writer(), loggerDebugRun.Prefix()+fmt.Sprintf("[i=%d] ", i), loggerDebug.Flags())
@@ -159,7 +175,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 		sendCountsKeyPastHour := []byte(b.GatewayType + string(b.GatewayKey) + time.Now().Add(-time.Hour).Truncate(time.Minute).Format("2006-01-02T15:04"))
 		sendCountsKeyPastDay := []byte(b.GatewayType + string(b.GatewayKey) + time.Now().Add(-24*time.Hour).Truncate(time.Minute).Format("2006-01-02T15:04"))
 		sendCountsKeyPrefix := []byte(b.GatewayType + string(b.GatewayKey))
-		if bRun.senderClient.GetLimitPerMinute() > 0 {
+		if bRun.gateway.GetLimitPerMinute() > 0 {
 			sleepDur := time.Duration(float64(μ) * (1 + rand.ExpFloat64()) / 2)
 			loggerDebugRunI.Printf("sleeping for %v\n", sleepDur)
 			if sleepCtx(ctx, sleepDur) {
@@ -171,10 +187,10 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
 				return fmt.Errorf("failed to read count: %s", err)
 			}
-			if count >= bRun.senderClient.GetLimitPerMinute() {
+			if count >= bRun.gateway.GetLimitPerMinute() {
 				// duration til minute changes
 				sleepDur := time.Minute - time.Since(time.Now().Truncate(time.Minute))
-				loggerDebugRunI.Printf("sent in the current minute %d - limit reached (%d) - sleeping for %v\n", count, bRun.senderClient.GetLimitPerMinute(), sleepDur)
+				loggerDebugRunI.Printf("sent in the current minute %d - limit reached (%d) - sleeping for %v\n", count, bRun.gateway.GetLimitPerMinute(), sleepDur)
 				if sleepCtx(ctx, sleepDur) {
 					return fmt.Errorf("broadcast has stopped")
 				}
@@ -182,7 +198,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			}
 			loggerDebugRunI.Printf("sent in the current minute: %d\n", count)
 		}
-		if bRun.senderClient.GetLimitPerHour() > 0 {
+		if bRun.gateway.GetLimitPerHour() > 0 {
 			// count sent in the last 60 minutes
 			var count int
 			err := dbutil.ForEachStartPrefix(db, "send_counts", sendCountsKeyPastHour, sendCountsKeyPrefix, &count, func(key []byte, val interface{}) error {
@@ -192,12 +208,12 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			if err != nil {
 				return fmt.Errorf("failed to read count: %s", err)
 			}
-			if count >= bRun.senderClient.GetLimitPerHour() {
-				return fmt.Errorf("sent in the last hour %d - limit reached (%d)", count, bRun.senderClient.GetLimitPerHour())
+			if count >= bRun.gateway.GetLimitPerHour() {
+				return fmt.Errorf("sent in the last hour %d - limit reached (%d)", count, bRun.gateway.GetLimitPerHour())
 			}
 			loggerDebugRunI.Printf("sent in the last hour: %d\n", count)
 		}
-		if bRun.senderClient.GetLimitPerDay() > 0 {
+		if bRun.gateway.GetLimitPerDay() > 0 {
 			// count sent in the last 24 hours
 			var count int
 			err := dbutil.ForEachStartPrefix(db, "send_counts", sendCountsKeyPastDay, sendCountsKeyPrefix, &count, func(key []byte, val interface{}) error {
@@ -207,8 +223,8 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			if err != nil {
 				return fmt.Errorf("failed to read count: %s", err)
 			}
-			if count >= bRun.senderClient.GetLimitPerDay() {
-				return fmt.Errorf("sent in the last 24 hours %d - limit reached (%d)", count, bRun.senderClient.GetLimitPerDay())
+			if count >= bRun.gateway.GetLimitPerDay() {
+				return fmt.Errorf("sent in the last 24 hours %d - limit reached (%d)", count, bRun.gateway.GetLimitPerDay())
 			}
 			loggerDebugRunI.Printf("sent in the last 24 hours: %d\n", count)
 		}
@@ -246,7 +262,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 
 			// send message
 			loggerDebugRunIA.Printf("sending message to %v\n", c.Recipient)
-			errSend := bRun.senderClient.Send(ctx, c.Recipient, bufSubject.String(), bufBody.String(), b.ID.String())
+			errSend := senderClient.Send(ctx, c.Recipient, bufSubject.String(), bufBody.String(), b.ID.String())
 			// log if message was sent
 			if errSend == nil {
 				loggerDebugRunIA.Printf("message sent to %v\n", c.Recipient)
@@ -300,11 +316,11 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 
 			// if send error, call PostSend() and PreSend() to find out if there is a connection issue
 			if errSend != nil {
-				err = bRun.senderClient.PostSend(ctx)
+				err = senderClient.PostSend(ctx)
 				if err != nil {
 					loggerDebugRunIA.Printf("PostSend() failed: %v\n", err)
 				}
-				errPreSend := bRun.senderClient.PreSend(ctx)
+				errPreSend := senderClient.PreSend(ctx)
 				// abort run on PreSend() failure
 				if errPreSend != nil {
 					return fmt.Errorf("preSend() failed: %w", errPreSend)

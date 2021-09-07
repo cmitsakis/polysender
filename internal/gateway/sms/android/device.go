@@ -24,6 +24,19 @@ type Device struct {
 	limitPerDay    SettingLimitPerDay
 }
 
+var (
+	_ gateway.Gateway      = (*Device)(nil)
+	_ gateway.SenderClient = (*Device)(nil)
+)
+
+func (d Device) DBTable() string {
+	return "gateway.sms.android.device"
+}
+
+func (d Device) DBKey() []byte {
+	return []byte(d.AndroidID)
+}
+
 func (d Device) GetLimitPerMinute() int {
 	return int(d.limitPerMinute)
 }
@@ -36,21 +49,11 @@ func (d Device) GetLimitPerDay() int {
 	return int(d.limitPerDay)
 }
 
-var _ gateway.SenderClient = (*Device)(nil)
-
-func (d Device) DBTable() string {
-	return "gateway.sms.android.device"
-}
-
-func (d Device) DBKey() []byte {
-	return []byte(d.AndroidID)
-}
-
 func (d Device) String() string {
 	return fmt.Sprintf("androidID: %v, name: %v", d.AndroidID, d.Name)
 }
 
-func NewSenderClientFromKey(db *bolt.DB, key []byte) (*Device, error) {
+func NewDeviceFromKey(db *bolt.DB, key []byte) (*Device, error) {
 	var dev Device
 	if err := db.View(func(tx *bolt.Tx) error {
 		err := dbutil.GetByKeyTx(tx, key, &dev)

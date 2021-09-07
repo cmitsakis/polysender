@@ -38,6 +38,8 @@ type SMTPAccount struct {
 	ConnectionReuseCountLimit int
 }
 
+var _ gateway.Gateway = (*SMTPAccount)(nil)
+
 func (s SMTPAccount) DBTable() string {
 	return "gateway.email.smtp"
 }
@@ -50,6 +52,38 @@ func (s SMTPAccount) String() string {
 	return fmt.Sprintf("ID: %s, Host: %v, Port: %v, Username: %v", s.ID, s.Host, s.Port, s.Username)
 }
 
+func (s SMTPAccount) GetLimitPerMinute() int {
+	return s.LimitPerMinute
+}
+
+func (s SMTPAccount) GetLimitPerHour() int {
+	return s.LimitPerHour
+}
+
+func (s SMTPAccount) GetLimitPerDay() int {
+	return s.LimitPerDay
+}
+
+func NewSMTPAccountFromKey(db *bolt.DB, key []byte) (*SMTPAccount, error) {
+	var acc SMTPAccount
+	var id Identity
+	// read from database: id, acc
+	if err := db.View(func(tx *bolt.Tx) error {
+		err := dbutil.GetByKeyTx(tx, key, &id)
+		if err != nil { // don't ignore dbutil.ErrNotFound
+			return fmt.Errorf("failed to read email identity from database: %w", err)
+		}
+		err = dbutil.GetByKeyTx(tx, id.SMTPKey, &acc)
+		if err != nil { // don't ignore dbutil.ErrNotFound
+			return fmt.Errorf("failed to read SMTP Key from database: %s", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return &acc, nil
+}
+
 type SenderClientSMTP struct {
 	SMTPAccount            SMTPAccount
 	From                   Identity
@@ -60,18 +94,6 @@ type SenderClientSMTP struct {
 	connectionReuseStarted time.Time
 	ListUnsubscribeEnabled bool
 	ListUnsubscribeEmail   string
-}
-
-func (c SenderClientSMTP) GetLimitPerMinute() int {
-	return c.SMTPAccount.LimitPerMinute
-}
-
-func (c SenderClientSMTP) GetLimitPerHour() int {
-	return c.SMTPAccount.LimitPerHour
-}
-
-func (c SenderClientSMTP) GetLimitPerDay() int {
-	return c.SMTPAccount.LimitPerDay
 }
 
 var _ gateway.SenderClient = (*SenderClientSMTP)(nil)
