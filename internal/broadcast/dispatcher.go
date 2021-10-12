@@ -184,14 +184,13 @@ func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, lo
 			}
 
 			// check if broadcast has finished
-			var r Run
-			err = dbutil.GetByKey(db, Run{BroadcastID: b.ID}.DBKey(), &r)
-			if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-				loggerDebugB.Println("dbutil.GetByKeyarray failed")
+			r, err := newRun(db, b)
+			if err != nil {
+				loggerDebugB.Printf("newRun() failed: %s", err)
 				continue
 			}
 			// log.Printf("[DEBUG] [Dispatcher] r.NextIndex: %d r.Length: %d err: %s\n", r.NextIndex, r.Length, err)
-			if err == nil && r.NextIndex == len(b.Contacts) {
+			if err == nil && r.NextIndexGet() == len(b.Contacts) {
 				loggerDebugB.Println("broadcast has finished - ignoring")
 				continue
 			}
@@ -217,7 +216,9 @@ func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, lo
 					delete(runningBroadcasts, b.ID.String())
 					delete(runningGateways, b.GatewayType+string(b.GatewayKey))
 				}()
-				err := run(ctx, b, db, loggerDebug, defaultSendHours, defaultTimezone)
+				loggerDebugBroadcast := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+fmt.Sprintf("[broadcast: %s] ", b.ID.String()), loggerDebug.Flags())
+				loggerInfoBroadcast := log.New(loggerInfo.Writer(), loggerInfo.Prefix()+fmt.Sprintf("[broadcast: %s] ", b.ID.String()), loggerInfo.Flags())
+				err := run(ctx, b, db, loggerInfoBroadcast, loggerDebugBroadcast, defaultSendHours, defaultTimezone)
 				if err != nil {
 					loggerInfoB.Printf("broadcast stopped: %s\n", err)
 					if errors.Is(err, android.ErrDeviceUnreachable) {

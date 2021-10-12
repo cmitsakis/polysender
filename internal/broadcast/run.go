@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"strings"
 	"text/template"
@@ -21,15 +20,18 @@ import (
 	"go.polysender.org/internal/gateway"
 	"go.polysender.org/internal/gateway/email"
 	"go.polysender.org/internal/gateway/sms/android"
+	"go.polysender.org/internal/workerpool"
 )
 
 type Run struct {
 	BroadcastID ulid.ULID
-	NextIndex   int
+	nextIndex   int
 	broadcast   Broadcast
 	gateway     gateway.Gateway
+	done        map[int]struct{}
 }
 
+// Run implements dbutil.Saveable but it's not saved to database anymore
 func (b Run) DBTable() string {
 	return "broadcast.run"
 }
@@ -38,39 +40,78 @@ func (b Run) DBKey() []byte {
 	return b.BroadcastID[:]
 }
 
+func (r *Run) NextIndexGetAndIncrement() int {
+	for i := r.nextIndex; i < len(r.broadcast.Contacts); i++ {
+		_, exists := r.done[i]
+		if !exists {
+			r.nextIndex = i + 1
+			return i
+		}
+	}
+	return len(r.broadcast.Contacts)
+}
+
+func (r Run) NextIndexGet() int {
+	for i := 0; i < len(r.broadcast.Contacts); i++ {
+		_, exists := r.done[i]
+		if !exists {
+			return i
+		}
+	}
+	return len(r.broadcast.Contacts)
+}
+
 var (
 	tableNameEmailIdentity = new(email.Identity).DBTable()
 	tableNameDeviceAndroid = new(android.Device).DBTable()
 )
 
-func newRun(db *bolt.DB, b Broadcast) (Run, error) {
-	var existingRun Run
-	err := dbutil.GetByKey(db, Run{BroadcastID: b.ID}.DBKey(), &existingRun)
-	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return Run{}, fmt.Errorf("cannot read broadcast run from database: %s", err)
-	}
+func newRunTx(tx *bolt.Tx, b Broadcast) (*Run, error) {
 	r := Run{
 		BroadcastID: b.ID,
 		broadcast:   b,
-		NextIndex:   existingRun.NextIndex,
+		done:        make(map[int]struct{}),
+	}
+	err := dbutil.ForEachPrefixTx(tx, &Send{}, b.ID[:], func(k []byte, v interface{}) error {
+		s := v.(Send)
+		r.done[s.Index] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dbutil.ForEachPrefixTx failed: %s", err)
 	}
 	if b.GatewayType == tableNameEmailIdentity {
-		r.gateway, err = email.NewSMTPAccountFromKey(db, b.GatewayKey)
+		r.gateway, err = email.NewSMTPAccountFromKey(tx, b.GatewayKey)
 		if err != nil {
-			return r, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
+			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
 		}
 	} else if b.GatewayType == tableNameDeviceAndroid {
-		r.gateway, err = android.NewDeviceFromKey(db, b.GatewayKey)
+		r.gateway, err = android.NewDeviceFromKey(tx, b.GatewayKey)
 		if err != nil {
-			return r, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
+			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
 		}
 	} else {
-		return r, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
+		return nil, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
+	}
+	return &r, nil
+}
+
+func newRun(db *bolt.DB, b Broadcast) (*Run, error) {
+	var r *Run
+	if err := db.View(func(tx *bolt.Tx) error {
+		var err error
+		r, err = newRunTx(tx, b)
+		if err != nil {
+			return fmt.Errorf("newRunTx failed: %s", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("database error: %s", err)
 	}
 	return r, nil
 }
 
-func newSenderClient(db *bolt.DB, r Run) (gateway.SenderClient, error) {
+func newSenderClient(db *bolt.DB, r *Run) (gateway.SenderClient, error) {
 	if r.broadcast.GatewayType == tableNameEmailIdentity {
 		senderClient, err := email.NewSenderClientFromKey(db, r.broadcast.GatewayKey)
 		if err != nil {
@@ -123,28 +164,29 @@ func (b Send) String() string {
 	return fmt.Sprintf("contact #%d: sent=%s%s", b.Index+1, sentStr, errorStr)
 }
 
-func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger, defaultSendHours SettingSendHours, defaultTimezone SettingTimezone) error {
+func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug *log.Logger, defaultSendHours SettingSendHours, defaultTimezone SettingTimezone) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	loggerDebugRun := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+"[run] [broadcast: "+b.ID.String()+"] ", loggerDebug.Flags())
+	loggerDebugRun := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+"[run] ", loggerDebug.Flags())
 	bRun, err := newRun(db, b)
 	if err != nil {
 		return fmt.Errorf("broadcast %s could not be started - newRun() failed: %s", b.ID.String(), err)
 	}
-	senderClient, err := newSenderClient(db, bRun)
+
+	// test connection
+	senderClientTest, err := newSenderClient(db, bRun)
 	if err != nil {
 		return fmt.Errorf("newSenderClient() failed: %w", err)
 	}
-	err = senderClient.PreSend(ctx)
+	err = senderClientTest.PreSend(ctx)
 	if err != nil {
 		return fmt.Errorf("preSend() failed: %w", err)
 	}
-	defer func() {
-		err = senderClient.PostSend(ctx)
-		if err != nil {
-			loggerDebugRun.Printf("PostSend() failed: %v\n", err)
-		}
-	}()
+	err = senderClientTest.PostSend(ctx)
+	if err != nil {
+		loggerDebugRun.Printf("PostSend() failed: %v\n", err)
+	}
+
 	msgTmplSubject, err := template.New("msg").Parse(bRun.broadcast.MsgSubject)
 	if err != nil {
 		return fmt.Errorf("template.Parse failed: %s", err)
@@ -157,7 +199,27 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 	if bRun.gateway.GetLimitPerMinute() > 0 {
 		μ = time.Minute / time.Duration(bRun.gateway.GetLimitPerMinute())
 	}
-	for i := bRun.NextIndex; i < len(bRun.broadcast.Contacts); i++ {
+	q := workerpool.NewQueue(ctx, bRun.gateway.GetConcurrencyMax(), 4, func(ctx context.Context, workerID int) (interface{}, error) {
+		senderClient, err := newSenderClient(db, bRun)
+		if err != nil {
+			return nil, fmt.Errorf("newSenderClient() failed: %w", err)
+		}
+		err = senderClient.PreSend(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("preSend() failed: %w", err)
+		}
+		return senderClient, nil
+	}, func(ctx context.Context, connection interface{}, workerID int) error {
+		senderClient := connection.(gateway.SenderClient)
+		err := senderClient.PostSend(ctx)
+		if err != nil {
+			loggerDebugRun.Printf("PostSend() failed: %v\n", err)
+		}
+		return nil
+	}, loggerInfo, loggerDebug)
+	defer q.StopAndWait()
+	for i := bRun.NextIndexGetAndIncrement(); i < len(bRun.broadcast.Contacts); i = bRun.NextIndexGetAndIncrement() {
+		i := i
 		loggerDebugRunI := log.New(loggerDebug.Writer(), loggerDebugRun.Prefix()+fmt.Sprintf("[i=%d] ", i), loggerDebug.Flags())
 		select {
 		case <-ctx.Done():
@@ -242,21 +304,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			return fmt.Errorf("msgTemplate.ExecuteTemplate failed: %s", err)
 		}
 
-		for attempt := 0; attempt < 4; attempt++ {
+		q.Enqueue(func(ctx context.Context, connection interface{}, workerID, attempt int) error {
+			senderClient := connection.(gateway.SenderClient)
 			loggerDebugRunIA := log.New(loggerDebug.Writer(), loggerDebugRunI.Prefix()+fmt.Sprintf("[attempt=%d] ", attempt), loggerDebug.Flags())
-
-			if attempt > 0 {
-				μ2 := μ
-				if μ == 0 {
-					μ2 = time.Second
-				}
-				// sleep for 1*μ2, 4*μ2, 16*μ2 seconds
-				sleepDur := time.Duration(math.Pow(4, float64(attempt-1))) * μ2
-				loggerDebugRunIA.Printf("sleeping for %v\n", sleepDur)
-				if sleepCtx(ctx, sleepDur) {
-					return fmt.Errorf("broadcast has stopped")
-				}
-			}
 
 			var sent int
 
@@ -276,7 +326,6 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 			}
 
 			// update DB
-			bRun.NextIndex = i + 1
 			errDB := db.Update(func(tx *bolt.Tx) error {
 				var errStr string
 				if errSend != nil {
@@ -301,12 +350,6 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 				if err != nil {
 					return fmt.Errorf("failed to store count: %s", err)
 				}
-
-				// update broadcast run
-				err = dbutil.UpsertSaveableTx(tx, bRun)
-				if err != nil {
-					return fmt.Errorf("failed to store run: %s", err)
-				}
 				return nil
 			})
 			// abort run on db failure
@@ -321,17 +364,17 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerDebug *log.Logger,
 					loggerDebugRunIA.Printf("PostSend() failed: %v\n", err)
 				}
 				errPreSend := senderClient.PreSend(ctx)
-				// abort run on PreSend() failure
 				if errPreSend != nil {
 					return fmt.Errorf("preSend() failed: %w", errPreSend)
 				}
 			}
 
-			// exit loop if message was sent or maybe sent
-			if sent > 0 {
-				break
+			if sent == 0 {
+				return fmt.Errorf("not sent")
 			}
-		}
+			// message was sent or maybe sent
+			return nil
+		})
 	}
 	loggerDebugRun.Println("run finished")
 	return nil

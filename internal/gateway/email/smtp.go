@@ -35,6 +35,7 @@ type SMTPAccount struct {
 	LimitPerMinute            int
 	LimitPerHour              int
 	LimitPerDay               int
+	ConcurrencyMax            int
 	ConnectionReuseCountLimit int
 }
 
@@ -64,22 +65,24 @@ func (s SMTPAccount) GetLimitPerDay() int {
 	return s.LimitPerDay
 }
 
-func NewSMTPAccountFromKey(db *bolt.DB, key []byte) (*SMTPAccount, error) {
+func (s SMTPAccount) GetConcurrencyMax() int {
+	if s.ConcurrencyMax > 0 {
+		return s.ConcurrencyMax
+	} else {
+		return 1
+	}
+}
+
+func NewSMTPAccountFromKey(tx *bolt.Tx, key []byte) (*SMTPAccount, error) {
 	var acc SMTPAccount
 	var id Identity
-	// read from database: id, acc
-	if err := db.View(func(tx *bolt.Tx) error {
-		err := dbutil.GetByKeyTx(tx, key, &id)
-		if err != nil { // don't ignore dbutil.ErrNotFound
-			return fmt.Errorf("failed to read email identity from database: %w", err)
-		}
-		err = dbutil.GetByKeyTx(tx, id.SMTPKey, &acc)
-		if err != nil { // don't ignore dbutil.ErrNotFound
-			return fmt.Errorf("failed to read SMTP Key from database: %s", err)
-		}
-		return nil
-	}); err != nil {
-		return nil, err
+	err := dbutil.GetByKeyTx(tx, key, &id)
+	if err != nil { // don't ignore dbutil.ErrNotFound
+		return nil, fmt.Errorf("failed to read email identity from database: %w", err)
+	}
+	err = dbutil.GetByKeyTx(tx, id.SMTPKey, &acc)
+	if err != nil { // don't ignore dbutil.ErrNotFound
+		return nil, fmt.Errorf("failed to read SMTP Key from database: %s", err)
 	}
 	return &acc, nil
 }

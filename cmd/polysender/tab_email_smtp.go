@@ -113,6 +113,7 @@ func smtpAccountNewOrEdit(w fyne.Window, db *bolt.DB, existingKey []byte, refres
 		{Name: "Send limit per minute", ExistingValue: itoaNonZero(a.LimitPerMinute)},
 		{Name: "Send limit per hour", ExistingValue: itoaNonZero(a.LimitPerHour)},
 		{Name: "Send limit per day", ExistingValue: itoaNonZero(a.LimitPerDay), Description: "0 = no limit"},
+		{Name: "Max number of connections", ExistingValue: itoaNonZero(a.ConcurrencyMax)},
 		{Name: "SMTP connection reuse count limit", ExistingValue: itoaNonZero(a.ConnectionReuseCountLimit), Description: "0 or 1 disables connection reuse.\n2+ will fail if the SMTP server\ndoes not support it."},
 	}
 	form.ShowFormPopup(w, "Edit SMTP Account", "Enter your SMTP server details", fields, func(inputValues []string) error {
@@ -156,9 +157,16 @@ func smtpAccountNewOrEdit(w fyne.Window, db *bolt.DB, existingKey []byte, refres
 				return logAndReturnError(fmt.Errorf("you cannot set limit per day without setting limit per minute"))
 			}
 		}
-		var smtpConnectionReuseCountLimit uint64
+		var concurrencyMax uint64
 		if inputValues[10] != "" {
-			smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[10], 10, 32)
+			concurrencyMax, err = strconv.ParseUint(inputValues[10], 10, 32)
+			if err != nil {
+				return logAndReturnError(fmt.Errorf("Max number of connections: invalid value: %s", err))
+			}
+		}
+		var smtpConnectionReuseCountLimit uint64
+		if inputValues[11] != "" {
+			smtpConnectionReuseCountLimit, err = strconv.ParseUint(inputValues[11], 10, 32)
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("SMTP connection reuse count limit: invalid value: %s", err))
 			}
@@ -184,6 +192,7 @@ func smtpAccountNewOrEdit(w fyne.Window, db *bolt.DB, existingKey []byte, refres
 			LimitPerMinute:            int(limitPerMinute),
 			LimitPerHour:              int(limitPerHour),
 			LimitPerDay:               int(limitPerDay),
+			ConcurrencyMax:            int(concurrencyMax),
 			ConnectionReuseCountLimit: int(smtpConnectionReuseCountLimit),
 		}
 		err = dbutil.UpsertSaveable(db, a2)

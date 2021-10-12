@@ -207,16 +207,15 @@ func (b *Broadcast) getStartableInFromTx(tx *bolt.Tx) (*time.Duration, error) {
 }
 
 func (b *Broadcast) ReadStatusFromTx(tx *bolt.Tx) error {
-	var run Run
-	err := dbutil.GetByKeyTx(tx, Run{BroadcastID: b.ID}.DBKey(), &run)
-	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return fmt.Errorf("database error: %s", err)
+	run, err := newRunTx(tx, *b)
+	if err != nil {
+		return fmt.Errorf("newRun() failed: %s", err)
 	}
 	// lock mutex because we read from runningBroadcasts
 	runningMutex.Lock()
 	defer runningMutex.Unlock()
 	_, existsInRunning := runningBroadcasts[b.ID.String()]
-	if errors.Is(err, dbutil.ErrNotFound) {
+	if len(run.done) == 0 {
 		if existsInRunning {
 			b.status = fmt.Sprintf("0/%d sent - running", len(b.Contacts))
 			return nil
@@ -239,16 +238,16 @@ func (b *Broadcast) ReadStatusFromTx(tx *bolt.Tx) error {
 		}
 		return nil
 	} else if existsInRunning {
-		b.status = fmt.Sprintf("%d/%d sent - running", run.NextIndex, len(b.Contacts))
+		b.status = fmt.Sprintf("%d/%d sent - running", len(run.done), len(b.Contacts))
 		return nil
-	} else if run.NextIndex == len(b.Contacts) {
-		b.status = fmt.Sprintf("%d/%d sent - finished", run.NextIndex, len(b.Contacts))
+	} else if len(run.done) == len(b.Contacts) {
+		b.status = fmt.Sprintf("%d/%d sent - finished", len(run.done), len(b.Contacts))
 		return nil
 		//} else if !b.SendDateTo.IsZero() && now.After(b.SendDateTo.Add(24*time.Hour)) {
-		//	b.status = fmt.Sprintf("%d/%d sent - expired", run.NextIndex, len(b.Contacts))
+		//	b.status = fmt.Sprintf("%d/%d sent - expired", len(run.done), len(b.Contacts))
 		//	return nil
 	} else {
-		b.status = fmt.Sprintf("%d/%d sent - paused", run.NextIndex, len(b.Contacts))
+		b.status = fmt.Sprintf("%d/%d sent - paused", len(run.done), len(b.Contacts))
 		return nil
 	}
 }

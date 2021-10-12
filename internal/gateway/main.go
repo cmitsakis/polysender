@@ -8,6 +8,7 @@ type Gateway interface {
 	GetLimitPerMinute() int
 	GetLimitPerHour() int
 	GetLimitPerDay() int
+	GetConcurrencyMax() int
 }
 
 type SenderClient interface {

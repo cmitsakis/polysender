@@ -49,32 +49,31 @@ func (d Device) GetLimitPerDay() int {
 	return int(d.limitPerDay)
 }
 
+func (d Device) GetConcurrencyMax() int {
+	return 1
+}
+
 func (d Device) String() string {
 	return fmt.Sprintf("androidID: %v, name: %v", d.AndroidID, d.Name)
 }
 
-func NewDeviceFromKey(db *bolt.DB, key []byte) (*Device, error) {
+func NewDeviceFromKey(tx *bolt.Tx, key []byte) (*Device, error) {
 	var dev Device
-	if err := db.View(func(tx *bolt.Tx) error {
-		err := dbutil.GetByKeyTx(tx, key, &dev)
-		if err != nil { // don't ignore dbutil.ErrNotFound
-			return fmt.Errorf("failed to read device from database: %s", err)
-		}
-		err = dbutil.GetByKeyTx(tx, dev.limitPerMinute.DBKey(), &dev.limitPerMinute)
-		if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-			return fmt.Errorf("failed to read device from database: %s", err)
-		}
-		err = dbutil.GetByKeyTx(tx, dev.limitPerHour.DBKey(), &dev.limitPerHour)
-		if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-			return fmt.Errorf("failed to read device from database: %s", err)
-		}
-		err = dbutil.GetByKeyTx(tx, dev.limitPerDay.DBKey(), &dev.limitPerDay)
-		if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-			return fmt.Errorf("failed to read device from database: %s", err)
-		}
-		return nil
-	}); err != nil {
-		return nil, err
+	err := dbutil.GetByKeyTx(tx, key, &dev)
+	if err != nil { // don't ignore dbutil.ErrNotFound
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerMinute.DBKey(), &dev.limitPerMinute)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerHour.DBKey(), &dev.limitPerHour)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerDay.DBKey(), &dev.limitPerDay)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
 	}
 	return &dev, nil
 }
