@@ -31,7 +31,7 @@ Download the latest [release](https://github.com/cmitsakis/polysender/releases) 
 
 #### macOS
 
-On *macOS* you have to remove the application from *quarantine* by running the following command:
+On *macOS* you have to remove the application from *quarantine* by following the instructions [here](https://support.apple.com/guide/mac-help/welcome/mac), or by running the following command:
 
 ```sh
 xattr -d com.apple.quarantine /path/to/polysender
