@@ -88,7 +88,7 @@ func main() {
 		}
 	}()
 
-	// start distpatcher
+	// start dispatcher
 	err = broadcast.DispatcherStart(db, loggerInfo, loggerDebug)
 	if err != nil {
 		loggerInfo.Println("failed to start dispatcher:", err)
