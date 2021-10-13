@@ -91,7 +91,7 @@ func (t *Table) UpdateAndRefresh(values []dbutil.Saveable) {
 			// set label's text
 			maxChars := 23
 			if cellAttribute.Width > 0 {
-				maxChars = int(cellAttribute.Width/7) - 6
+				maxChars = int(cellAttribute.Width/7) - 5
 			}
 			cellCanvas.(*fyne.Container).Objects[0].(*widget.Label).SetText(removeNewlines(firstNRunes(cellValue, maxChars)))
 			// hide buttons
