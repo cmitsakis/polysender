@@ -109,11 +109,18 @@ func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, lo
 	loggerInfo2 := log.New(loggerInfo.Writer(), loggerInfo.Prefix()+"[Dispatcher] ", loggerInfo.Flags())
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
+	first := true
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		if first {
+			// don't wait at the first iteration
+			first = false
+		} else {
+			// wait for ticker
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 		var bs []Broadcast
 		err := dbutil.ForEach(db, &Broadcast{}, func(k []byte, v interface{}) error {
