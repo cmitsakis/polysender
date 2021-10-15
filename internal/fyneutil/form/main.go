@@ -170,7 +170,7 @@ func ShowFormPopup(w fyne.Window, title, description string, fields []FormField,
 		formWidgets = append(formWidgets, fieldWidget)
 		f.Append(field.Name+":", fieldWidget)
 		if field.Description != "" {
-			l := widget.NewLabel(field.Description)
+			l := widget.NewLabelWithStyle(field.Description, fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 			// l.Wrapping = fyne.TextWrapWord
 			f.Append("", l)
 		}

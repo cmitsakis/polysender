@@ -288,7 +288,8 @@ func showBroadcastWizard1(w fyne.Window, refreshChan chan struct{}) {
 	f.Append("File type:", fileTypeRadio)
 	f.Append("CSV Delimiter:", delimiterEntry)
 	f.Append("CSV has header:", hasHeaderCheck)
-	f.Append("Recipient column (name or number):", recipientColumnEntry)
+	f.Append("Recipient column in CSV:", recipientColumnEntry)
+	f.Append("", widget.NewLabelWithStyle("header name or number", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}))
 	form.ShowCustomPopup(w, "New Broadcast - Step 1/2", "", "Next", "Cancel", f, func() error {
 		// lock mutex because we read from fileStringBuilder
 		m.Lock()
@@ -504,12 +505,12 @@ func showBroadcastWizard2(w fyne.Window, filename string, contacts []broadcast.C
 	f.Append("Message example:", msgBodyExample)
 	f.Append("Gateway:", gatewaySelect)
 	f.Append("Send hours:", sendHoursEntry)
-	f.Append("", widget.NewLabel("Optional. If not set, value from settings is used"))
+	f.Append("", widget.NewLabelWithStyle("Optional. If not set, value from settings is used", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}))
 	f.Append("Time zone:", timezoneValue)
 	f.Append("Send date start:", sendDate1Entry)
-	f.Append("", widget.NewLabel("Optional. If you want the broadcast to start at a specific\nday in the future"))
+	f.Append("", widget.NewLabelWithStyle("Optional. If you want the broadcast to start at a specific\nday in the future", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}))
 	f.Append("Send date end:", sendDate2Entry)
-	f.Append("", widget.NewLabel("Optional. If you want broadcast to stop at at a specific date\neven if not all recipients have been contacted.\nUseful for time-sensitive announcements."))
+	f.Append("", widget.NewLabelWithStyle("Optional. If you want broadcast to stop at at a specific date\neven if not all recipients have been contacted.\nUseful for time-sensitive announcements.", fyne.TextAlignLeading, fyne.TextStyle{Italic: true}))
 
 	form.ShowCustomPopup(w, "New Broadcast - Step 2/2", "", "Next", "Cancel", f, func() error {
 		// lock mutex because we read from msgBodyFileStringBuilder, timezoneSelected
