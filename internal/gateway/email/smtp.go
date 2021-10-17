@@ -326,6 +326,6 @@ func generateMessageID(broadcastID, to, domain string) string {
 	h := sha256.New()
 	h.Write([]byte(broadcastID))
 	h.Write([]byte(to))
-	id := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h.Sum(nil))[:16]
+	id := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h.Sum(nil)[:16])
 	return fmt.Sprintf("%s@%s", id, domain)
 }
