@@ -9,7 +9,9 @@ import (
 	"log"
 	mrand "math/rand"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -88,6 +90,24 @@ func main() {
 		}
 	}()
 
+	// graceful shutdown on SIGINT, SIGTERM
+	cleanup := func() {
+		loggerInfo.Println("[cleanup] stopping dispatcher")
+		err := broadcast.DispatcherStopWait(loggerInfo, loggerDebug)
+		if err != nil {
+			loggerInfo.Println("failed to stop dispatcher:", err)
+			return
+		}
+		loggerInfo.Println("[cleanup] dispatcher stopped")
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signals
+		cleanup()
+		os.Exit(0)
+	}()
+
 	// start dispatcher
 	err = broadcast.DispatcherStart(db, loggerInfo, loggerDebug)
 	if err != nil {
@@ -103,5 +123,9 @@ func main() {
 	tabs := container.NewAppTabs(tabBroadcasts(w), tabSMSAndroid(w), tabEmail(w), tabAbout(w))
 	w.SetContent(tabs)
 	w.Resize(fyne.NewSize(1280, 720))
+	w.SetCloseIntercept(func() { // graceful shutdown on window close
+		cleanup()
+		w.Close()
+	})
 	w.ShowAndRun()
 }

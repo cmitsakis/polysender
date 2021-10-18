@@ -41,10 +41,12 @@ func (d dispatcherStatusType) String() string {
 }
 
 var (
-	dispatcherCancel     context.CancelFunc
-	dispatcherStatus     dispatcherStatusType
-	DispatcherStatusChan = make(chan dispatcherStatusType, 1)
-	dispatcherMutex      sync.Mutex
+	dispatcherCancel      context.CancelFunc
+	dispatcherStatus      dispatcherStatusType
+	DispatcherStatusChan  = make(chan dispatcherStatusType, 1)
+	dispatcherMutex       sync.Mutex
+	dispatcherWaiting     bool
+	dispatcherWaitingChan = make(chan struct{})
 )
 
 func DispatcherStart(db *bolt.DB, loggerInfo, loggerDebug *log.Logger) error {
@@ -69,6 +71,10 @@ func DispatcherStart(db *bolt.DB, loggerInfo, loggerDebug *log.Logger) error {
 		dispatcherStatus = dispatcherStopped
 		loggerInfo.Println("dispatcher stopped")
 		DispatcherStatusChan <- dispatcherStatus
+		if dispatcherWaiting {
+			dispatcherWaitingChan <- struct{}{}
+			dispatcherWaiting = false
+		}
 	}()
 	return nil
 }
@@ -84,6 +90,28 @@ func DispatcherStop(loggerInfo, loggerDebug *log.Logger) error {
 	dispatcherStatus = dispatcherStopping
 	DispatcherStatusChan <- dispatcherStatus
 	loggerInfo.Println("dispatcher stopping")
+	return nil
+}
+
+func DispatcherStopWait(loggerInfo, loggerDebug *log.Logger) error {
+	err := func() error {
+		dispatcherMutex.Lock()
+		defer dispatcherMutex.Unlock()
+		if dispatcherCancel == nil {
+			return fmt.Errorf("dispatcher is not running")
+		}
+		dispatcherCancel()
+		dispatcherCancel = nil
+		dispatcherStatus = dispatcherStopping
+		DispatcherStatusChan <- dispatcherStatus
+		loggerInfo.Println("dispatcher stopping")
+		dispatcherWaiting = true
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+	<-dispatcherWaitingChan
 	return nil
 }
 
@@ -107,6 +135,8 @@ func init() {
 func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, loggerDebug *log.Logger) {
 	loggerDebug2 := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+"[Dispatcher] ", loggerDebug.Flags())
 	loggerInfo2 := log.New(loggerInfo.Writer(), loggerInfo.Prefix()+"[Dispatcher] ", loggerInfo.Flags())
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	first := true
@@ -216,12 +246,14 @@ func dispatcherLoop(ctx context.Context, db *bolt.DB, loggerInfo *log.Logger, lo
 				runningGateways[b.GatewayType+string(b.GatewayKey)] = struct{}{}
 			}()
 			loggerInfoB.Println("broadcast starting")
+			wg.Add(1)
 			go func(b Broadcast) {
 				defer func() {
 					runningMutex.Lock()
 					defer runningMutex.Unlock()
 					delete(runningBroadcasts, b.ID.String())
 					delete(runningGateways, b.GatewayType+string(b.GatewayKey))
+					wg.Done()
 				}()
 				loggerDebugBroadcast := log.New(loggerDebug.Writer(), loggerDebug.Prefix()+fmt.Sprintf("[broadcast: %s] ", b.ID.String()), loggerDebug.Flags())
 				loggerInfoBroadcast := log.New(loggerInfo.Writer(), loggerInfo.Prefix()+fmt.Sprintf("[broadcast: %s] ", b.ID.String()), loggerInfo.Flags())
