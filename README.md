@@ -12,7 +12,7 @@ SMS are sent via your *Android* phone connected to your computer with the help o
 
 ## Supported platforms
 
-It should work on *Linux*, *Windows 8.1+*, *macOS 10.13+*, although it has only been tested on *Linux* and *macOS 11*.
+It should work on *Linux*, *Windows 8.1+*, *macOS 10.14+*, although it has only been tested on *Linux* and *macOS 11*.
 
 Sending SMS via *ADB* is supported on *Android* versions from 5 to 10 but it might not work on some versions since it hasn't been tested.
 *Android 11* is not supported yet.
