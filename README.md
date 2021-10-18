@@ -101,12 +101,6 @@ Your bug reports should include:
 #### Contributions license
 
 Your contributions must be licensed under the terms of the *Blue Oak Model License 1.0.0* (see [License](#license)).
-Add `License: BlueOak-1.0.0` as a trailer at the end of your commit messages to acknowledge this.
-You can configure *Git* to add this trailer automatically on all your commits for this repository (whenever you use `git commit` without `-m`) by running the following command at the root of this repository:
-
-```sh
-git config commit.template .gitmessage.txt
-```
 
 ## License
 
