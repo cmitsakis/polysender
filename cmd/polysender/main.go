@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	mrand "math/rand"
 	"os"
@@ -70,7 +70,7 @@ func main() {
 		loggerDebug = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Llongfile|log.Lmsgprefix)
 	} else {
 		loggerInfo = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Llongfile|log.Lmsgprefix)
-		loggerDebug = log.New(ioutil.Discard, "", 0)
+		loggerDebug = log.New(io.Discard, "", 0)
 	}
 
 	// create database directory if it does not exist
