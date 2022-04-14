@@ -199,7 +199,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 	if bRun.gateway.GetLimitPerMinute() > 0 {
 		μ = time.Minute / time.Duration(bRun.gateway.GetLimitPerMinute())
 	}
-	q := workerpool.NewQueue(ctx, bRun.gateway.GetConcurrencyMax(), 4, func(ctx context.Context, workerID int) (interface{}, error) {
+	q, err := workerpool.NewPoolWithInit(bRun.gateway.GetConcurrencyMax(), func(workerID int) (interface{}, error) {
 		senderClient, err := newSenderClient(db, bRun)
 		if err != nil {
 			return nil, fmt.Errorf("newSenderClient() failed: %w", err)
@@ -209,14 +209,17 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 			return nil, fmt.Errorf("preSend() failed: %w", err)
 		}
 		return senderClient, nil
-	}, func(ctx context.Context, connection interface{}, workerID int) error {
+	}, func(workerID int, connection interface{}) error {
 		senderClient := connection.(gateway.SenderClient)
 		err := senderClient.PostSend(ctx)
 		if err != nil {
 			loggerDebugRun.Printf("PostSend() failed: %v\n", err)
 		}
 		return nil
-	}, loggerInfo, loggerDebug)
+	}, workerpool.Retries(4), workerpool.LoggerInfo(log.Default()), workerpool.LoggerDebug(log.Default()))
+	if err != nil {
+		return fmt.Errorf("failed to create pool of workers: %s", err)
+	}
 	defer q.StopAndWait()
 	for i := bRun.NextIndexGetAndIncrement(); i < len(bRun.broadcast.Contacts); i = bRun.NextIndexGetAndIncrement() {
 		i := i
@@ -304,7 +307,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 			return fmt.Errorf("msgTemplate.ExecuteTemplate failed: %s", err)
 		}
 
-		q.Enqueue(func(ctx context.Context, connection interface{}, workerID, attempt int) error {
+		q.Submit(func(workerID, attempt int, connection interface{}) error {
 			senderClient := connection.(gateway.SenderClient)
 			loggerDebugRunIA := log.New(loggerDebug.Writer(), loggerDebugRunI.Prefix()+fmt.Sprintf("[attempt=%d] ", attempt), loggerDebug.Flags())
 
