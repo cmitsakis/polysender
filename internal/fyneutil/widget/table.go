@@ -45,12 +45,12 @@ func NewTable(refreshChan chan<- struct{}, attrs []TableAttribute, actions ...Ac
 		return c
 	}
 	t.Table.UpdateCell = func(id widget.TableCellID, cellCanvas fyne.CanvasObject) {}
+	t.ExtendBaseWidget(t)
 	for i, attr := range attrs {
 		if attr.Width > 0 {
 			t.SetColumnWidth(i, attr.Width)
 		}
 	}
-	t.ExtendBaseWidget(t)
 	return t
 }
 
