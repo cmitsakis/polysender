@@ -149,9 +149,9 @@ func ForEachReverseTx(tx *bolt.Tx, typ Saveable, f func([]byte, interface{}) err
 	return nil
 }
 
-func ForEachPrefix(db *bolt.DB, val Saveable, f func([]byte, interface{}) error) error {
+func ForEachPrefix(db *bolt.DB, val Saveable, prefix []byte, f func([]byte, interface{}) error) error {
 	if err := db.View(func(tx *bolt.Tx) error {
-		return ForEachTx(tx, val, f)
+		return ForEachPrefixTx(tx, val, prefix, f)
 	}); err != nil {
 		return fmt.Errorf("transaction (View) failed: %w", err)
 	}
