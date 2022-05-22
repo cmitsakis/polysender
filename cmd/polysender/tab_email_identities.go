@@ -115,15 +115,15 @@ func emailIdentityNewOrEdit(w fyne.Window, key []byte, next func(email.Identity)
 			return
 		}
 	}
-	var idSMTPKeyString string
-	if id.SMTPKey != nil {
-		var idSMTPKeyULID ulid.ULID
-		err = idSMTPKeyULID.UnmarshalBinary(id.SMTPKey)
+	var idSMTPAccountKeyString string
+	if id.SMTPAccountKey != nil {
+		var idSMTPAccountKeyULID ulid.ULID
+		err = idSMTPAccountKeyULID.UnmarshalBinary(id.SMTPAccountKey)
 		if err != nil {
 			logAndShowError(fmt.Errorf("email identity has invalid SMTP key: %s", err), w)
 			return
 		}
-		idSMTPKeyString = idSMTPKeyULID.String()
+		idSMTPAccountKeyString = idSMTPAccountKeyULID.String()
 	}
 
 	var smtpAccountDescription string
@@ -144,7 +144,7 @@ func emailIdentityNewOrEdit(w fyne.Window, key []byte, next func(email.Identity)
 		},
 		{
 			Name:          "SMTP Account",
-			ExistingValue: idSMTPKeyString,
+			ExistingValue: idSMTPAccountKeyString,
 			Type:          form.FormFieldTypeRadio,
 			Options:       smtpAccountsKeysFriendlyNames,
 			OptionsValues: smtpAccountsKeysULID,
@@ -174,14 +174,14 @@ func emailIdentityNewOrEdit(w fyne.Window, key []byte, next func(email.Identity)
 			if len(fields) == 0 {
 				return logAndReturnError(fmt.Errorf("no fields found"))
 			}
-			idNewSMTPKeyULID, err := ulid.ParseStrict(fields[0])
+			idNewSMTPAccountKeyULID, err := ulid.ParseStrict(fields[0])
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("failed to parse SMTP ULID: %s", err))
 			}
 			idNew = email.Identity{
-				Name:    inputValues[0],
-				Email:   eml,
-				SMTPKey: idNewSMTPKeyULID[:],
+				Name:           inputValues[0],
+				Email:          eml,
+				SMTPAccountKey: idNewSMTPAccountKeyULID[:],
 			}
 		} else {
 			idNew = email.Identity{

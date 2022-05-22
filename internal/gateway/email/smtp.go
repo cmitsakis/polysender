@@ -39,8 +39,6 @@ type SMTPAccount struct {
 	ConnectionReuseCountLimit int
 }
 
-var _ gateway.Gateway = (*SMTPAccount)(nil)
-
 func (s SMTPAccount) DBTable() string {
 	return "gateway.email.smtp"
 }
@@ -53,70 +51,16 @@ func (s SMTPAccount) String() string {
 	return fmt.Sprintf("ID: %s, Host: %v, Port: %v, Username: %v", s.ID, s.Host, s.Port, s.Username)
 }
 
-func (s SMTPAccount) GetLimitPerMinute() int {
-	return s.LimitPerMinute
-}
-
-func (s SMTPAccount) GetLimitPerHour() int {
-	return s.LimitPerHour
-}
-
-func (s SMTPAccount) GetLimitPerDay() int {
-	return s.LimitPerDay
-}
-
-func (s SMTPAccount) GetConcurrencyMax() int {
-	if s.ConcurrencyMax > 0 {
-		return s.ConcurrencyMax
-	} else {
-		return 1
+func (id Identity) NewSenderClient(db *bolt.DB, _ int) (gateway.SenderClient, error) {
+	var zeroULID ulid.ULID
+	if id.SMTPAccount.ID == zeroULID {
+		return nil, fmt.Errorf("email identity %v has no associated SMTP account", id)
 	}
-}
-
-func NewSMTPAccountFromKey(tx *bolt.Tx, key []byte) (*SMTPAccount, error) {
-	var acc SMTPAccount
-	var id Identity
-	err := dbutil.GetByKeyTx(tx, key, &id)
-	if err != nil { // don't ignore dbutil.ErrNotFound
-		return nil, fmt.Errorf("failed to read email identity from database: %w", err)
-	}
-	err = dbutil.GetByKeyTx(tx, id.SMTPKey, &acc)
-	if err != nil { // don't ignore dbutil.ErrNotFound
-		return nil, fmt.Errorf("failed to read SMTP Key from database: %s", err)
-	}
-	return &acc, nil
-}
-
-type SenderClientSMTP struct {
-	SMTPAccount            SMTPAccount
-	From                   Identity
-	saslClient             sasl.Client
-	TLSConfig              *tls.Config
-	conn                   *smtp.Client
-	connectionReuseCounter int
-	connectionReuseStarted time.Time
-	ListUnsubscribeEnabled bool
-	ListUnsubscribeEmail   string
-}
-
-var _ gateway.SenderClient = (*SenderClientSMTP)(nil)
-
-func NewSenderClientFromKey(db *bolt.DB, key []byte) (*SenderClientSMTP, error) {
-	var acc SMTPAccount
-	var id Identity
 	var settingListUnsubscribeEnabled SettingListUnsubscribeEnabled
 	var listUnsubscribeEmail string
-	// read from database: id, acc, settingListUnsubscribeEnabled, listUnsubscribeEmail
+	// read from database: settingListUnsubscribeEnabled, listUnsubscribeEmail
 	if err := db.View(func(tx *bolt.Tx) error {
-		err := dbutil.GetByKeyTx(tx, key, &id)
-		if err != nil { // don't ignore dbutil.ErrNotFound
-			return fmt.Errorf("failed to read email identity from database: %w", err)
-		}
-		err = dbutil.GetByKeyTx(tx, id.SMTPKey, &acc)
-		if err != nil { // don't ignore dbutil.ErrNotFound
-			return fmt.Errorf("failed to read SMTP Key from database: %s", err)
-		}
-		err = dbutil.GetByKeyTx(tx, settingListUnsubscribeEnabled.DBKey(), &settingListUnsubscribeEnabled)
+		err := dbutil.GetByKeyTx(tx, settingListUnsubscribeEnabled.DBKey(), &settingListUnsubscribeEnabled)
 		if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
 			return fmt.Errorf("failed to read setting ListUnsubscribeEnabled from database: %s", err)
 		}
@@ -133,12 +77,26 @@ func NewSenderClientFromKey(db *bolt.DB, key []byte) (*SenderClientSMTP, error) 
 		return nil, err
 	}
 	return &SenderClientSMTP{
-		SMTPAccount:            acc,
+		SMTPAccount:            id.SMTPAccount,
 		From:                   id,
 		ListUnsubscribeEnabled: bool(settingListUnsubscribeEnabled),
 		ListUnsubscribeEmail:   listUnsubscribeEmail,
 	}, nil
 }
+
+type SenderClientSMTP struct {
+	SMTPAccount            SMTPAccount
+	From                   Identity
+	saslClient             sasl.Client
+	TLSConfig              *tls.Config
+	conn                   *smtp.Client
+	connectionReuseCounter int
+	connectionReuseStarted time.Time
+	ListUnsubscribeEnabled bool
+	ListUnsubscribeEmail   string
+}
+
+var _ gateway.SenderClient = (*SenderClientSMTP)(nil)
 
 func (c *SenderClientSMTP) PreSend(ctx context.Context) error {
 	var err error

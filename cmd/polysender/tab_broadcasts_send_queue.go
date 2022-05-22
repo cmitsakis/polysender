@@ -26,8 +26,7 @@ import (
 	container2 "go.polysender.org/internal/fyneutil/container"
 	"go.polysender.org/internal/fyneutil/form"
 	widget2 "go.polysender.org/internal/fyneutil/widget"
-	"go.polysender.org/internal/gateway/email"
-	"go.polysender.org/internal/gateway/sms/android"
+	"go.polysender.org/internal/gateway"
 	"go.polysender.org/internal/tzdb"
 )
 
@@ -438,28 +437,15 @@ func showBroadcastWizard2(w fyne.Window, filename string, contacts []broadcast.C
 		}()
 	})
 
-	gateways := make([]dbutil.Saveable, 0)
-	err := dbutil.ForEach(db, &email.Identity{}, func(k []byte, v interface{}) error {
-		emailID := v.(email.Identity)
-		gateways = append(gateways, emailID)
-		return nil
-	})
+	gateways, err := gateway.GetGateways(db)
 	if err != nil {
-		logAndShowError(fmt.Errorf("cannot read email identities from database: %s", err), w)
-	}
-	err = dbutil.ForEach(db, &android.Device{}, func(k []byte, v interface{}) error {
-		dev := v.(android.Device)
-		gateways = append(gateways, dev)
-		return nil
-	})
-	if err != nil {
-		logAndShowError(fmt.Errorf("cannot read android devices from database: %s", err), w)
+		logAndShowError(fmt.Errorf("cannot read gateways from database: %s", err), w)
 	}
 	gatewayStrings := make([]string, 0, len(gateways))
 	for _, g := range gateways {
 		gatewayStrings = append(gatewayStrings, fmt.Sprintf("%v", g))
 	}
-	var gatewaySelected dbutil.Saveable
+	var gatewaySelected gateway.Gateway
 	gatewaySelect := widget.NewSelect(gatewayStrings, func(selected string) {
 	})
 

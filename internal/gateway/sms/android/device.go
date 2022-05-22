@@ -14,6 +14,42 @@ import (
 	"go.polysender.org/internal/gateway/sms/android/kde"
 )
 
+type GatewayCreator struct{}
+
+func init() {
+	gateway.Register(GatewayCreator{})
+}
+
+func (c GatewayCreator) DBTable() string {
+	return "gateway.sms.android.device"
+}
+
+func (c GatewayCreator) NewGatewayFromDBKey(tx *bolt.Tx, key []byte) (gateway.Gateway, error) {
+	var dev Device
+	err := dbutil.GetByKeyTx(tx, key, &dev)
+	if err != nil { // don't ignore dbutil.ErrNotFound
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerMinute.DBKey(), &dev.limitPerMinute)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerHour.DBKey(), &dev.limitPerHour)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	err = dbutil.GetByKeyTx(tx, dev.limitPerDay.DBKey(), &dev.limitPerDay)
+	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read device from database: %s", err)
+	}
+	return &dev, nil
+}
+
+func (c GatewayCreator) NewGatewayEmpty() gateway.Gateway {
+	var dev Device
+	return &dev
+}
+
 type Device struct {
 	AndroidID      string
 	Name           string
@@ -53,29 +89,12 @@ func (d Device) GetConcurrencyMax() int {
 	return 1
 }
 
-func (d Device) String() string {
-	return fmt.Sprintf("androidID: %v, name: %v", d.AndroidID, d.Name)
+func (d Device) NewSenderClient(db *bolt.DB, _ int) (gateway.SenderClient, error) {
+	return &d, nil
 }
 
-func NewDeviceFromKey(tx *bolt.Tx, key []byte) (*Device, error) {
-	var dev Device
-	err := dbutil.GetByKeyTx(tx, key, &dev)
-	if err != nil { // don't ignore dbutil.ErrNotFound
-		return nil, fmt.Errorf("failed to read device from database: %s", err)
-	}
-	err = dbutil.GetByKeyTx(tx, dev.limitPerMinute.DBKey(), &dev.limitPerMinute)
-	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return nil, fmt.Errorf("failed to read device from database: %s", err)
-	}
-	err = dbutil.GetByKeyTx(tx, dev.limitPerHour.DBKey(), &dev.limitPerHour)
-	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return nil, fmt.Errorf("failed to read device from database: %s", err)
-	}
-	err = dbutil.GetByKeyTx(tx, dev.limitPerDay.DBKey(), &dev.limitPerDay)
-	if err != nil && !errors.Is(err, dbutil.ErrNotFound) {
-		return nil, fmt.Errorf("failed to read device from database: %s", err)
-	}
-	return &dev, nil
+func (d Device) String() string {
+	return fmt.Sprintf("androidID: %v, name: %v", d.AndroidID, d.Name)
 }
 
 type deviceAble interface {

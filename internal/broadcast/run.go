@@ -17,8 +17,6 @@ import (
 
 	"go.polysender.org/internal/dbutil"
 	"go.polysender.org/internal/gateway"
-	"go.polysender.org/internal/gateway/email"
-	"go.polysender.org/internal/gateway/sms/android"
 	"go.polysender.org/internal/workerpool"
 )
 
@@ -60,11 +58,6 @@ func (r Run) NextIndexGet() int {
 	return len(r.broadcast.Contacts)
 }
 
-var (
-	tableNameEmailIdentity = new(email.Identity).DBTable()
-	tableNameDeviceAndroid = new(android.Device).DBTable()
-)
-
 func newRunTx(tx *bolt.Tx, b Broadcast) (*Run, error) {
 	r := Run{
 		BroadcastID: b.ID,
@@ -79,18 +72,9 @@ func newRunTx(tx *bolt.Tx, b Broadcast) (*Run, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dbutil.ForEachPrefixTx failed: %s", err)
 	}
-	if b.GatewayType == tableNameEmailIdentity {
-		r.gateway, err = email.NewSMTPAccountFromKey(tx, b.GatewayKey)
-		if err != nil {
-			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
-		}
-	} else if b.GatewayType == tableNameDeviceAndroid {
-		r.gateway, err = android.NewDeviceFromKey(tx, b.GatewayKey)
-		if err != nil {
-			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", b.GatewayKey, err)
-		}
-	} else {
-		return nil, fmt.Errorf("unknown b.GatewayType %s", b.GatewayType)
+	r.gateway, err = gateway.NewGatewayFromDBTableAndKey(tx, b.GatewayType, b.GatewayKey)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create sender client from table: %s key: %s error: %s", b.GatewayType, string(b.GatewayKey), err)
 	}
 	return &r, nil
 }
@@ -108,23 +92,6 @@ func newRun(db *bolt.DB, b Broadcast) (*Run, error) {
 		return nil, fmt.Errorf("database error: %s", err)
 	}
 	return r, nil
-}
-
-func newSenderClient(db *bolt.DB, r *Run) (gateway.SenderClient, error) {
-	if r.broadcast.GatewayType == tableNameEmailIdentity {
-		senderClient, err := email.NewSenderClientFromKey(db, r.broadcast.GatewayKey)
-		if err != nil {
-			return nil, fmt.Errorf("cannot create sender client from key: %s error: %s", r.broadcast.GatewayKey, err)
-		}
-		return senderClient, nil
-	} else if r.broadcast.GatewayType == tableNameDeviceAndroid {
-		senderClient, ok := r.gateway.(gateway.SenderClient)
-		if !ok {
-			return nil, fmt.Errorf("type assertion failed. r.gateway is not gateway.SenderClient")
-		}
-		return senderClient, nil
-	}
-	return nil, fmt.Errorf("unknown b.GatewayType %s", r.broadcast.GatewayType)
 }
 
 type Send struct {
@@ -173,9 +140,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 	}
 
 	// test connection
-	senderClientTest, err := newSenderClient(db, bRun)
+	senderClientTest, err := bRun.gateway.NewSenderClient(db, 0)
 	if err != nil {
-		return fmt.Errorf("newSenderClient() failed: %w", err)
+		return fmt.Errorf("NewSenderClient() failed: %w", err)
 	}
 	err = senderClientTest.PreSend(ctx)
 	if err != nil {
@@ -199,9 +166,9 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 		μ = time.Minute / time.Duration(bRun.gateway.GetLimitPerMinute())
 	}
 	q, err := workerpool.NewPoolWithInit(bRun.gateway.GetConcurrencyMax(), func(workerID int) (interface{}, error) {
-		senderClient, err := newSenderClient(db, bRun)
+		senderClient, err := bRun.gateway.NewSenderClient(db, workerID)
 		if err != nil {
-			return nil, fmt.Errorf("newSenderClient() failed: %w", err)
+			return nil, fmt.Errorf("NewSenderClient() failed: %w", err)
 		}
 		err = senderClient.PreSend(ctx)
 		if err != nil {
