@@ -18,8 +18,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"go.polysender.org/internal/dbutil"
-	"go.polysender.org/internal/errorbehavior"
 	"go.polysender.org/internal/gateway"
+	"go.polysender.org/internal/workerpool"
 )
 
 type SMTPAccount struct {
@@ -246,7 +246,7 @@ func (c *SenderClientSMTP) Send(ctx context.Context, to string, subject, msg, br
 		// reconnect
 		err := c.PreSend(ctx)
 		if err != nil {
-			return errorbehavior.WrapRetryable(fmt.Errorf("failed to connect to server: %s", err))
+			return workerpool.ErrorWrapRetryable(fmt.Errorf("failed to connect to server: %s", err))
 		}
 	}
 	c.connectionReuseCounter++
@@ -261,23 +261,23 @@ func (c *SenderClientSMTP) Send(ctx context.Context, to string, subject, msg, br
 
 	err = c.conn.Noop()
 	if err != nil {
-		return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Noop failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Noop failed: %s", err))
 	}
 	err = c.conn.Mail(fromParsed.Address, nil)
 	if err != nil {
 		var errSMTP *smtp.SMTPError
 		if errors.As(err, &errSMTP) {
-			return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Mail failed with code %d: %v", errSMTP.Code, errSMTP))
+			return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Mail failed with code %d: %v", errSMTP.Code, errSMTP))
 		}
-		return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Mail failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Mail failed: %s", err))
 	}
 	err = c.conn.Rcpt(to)
 	if err != nil {
 		var errSMTP *smtp.SMTPError
 		if errors.As(err, &errSMTP) {
-			return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Rcpt failed with code %d: %v", errSMTP.Code, errSMTP))
+			return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Rcpt failed with code %d: %v", errSMTP.Code, errSMTP))
 		}
-		return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Rcpt failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Rcpt failed: %s", err))
 	}
 
 	var header mail.Header
@@ -302,21 +302,21 @@ func (c *SenderClientSMTP) Send(ctx context.Context, to string, subject, msg, br
 	if err != nil {
 		var errSMTP *smtp.SMTPError
 		if errors.As(err, &errSMTP) {
-			return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Data failed with code %d: %v", errSMTP.Code, errSMTP))
+			return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Data failed with code %d: %v", errSMTP.Code, errSMTP))
 		}
-		return errorbehavior.WrapRetryable(fmt.Errorf("SMTP Data failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("SMTP Data failed: %s", err))
 	}
 	defer dataWriter.Close()
 
 	dataBodyWriter, err := mail.CreateSingleInlineWriter(dataWriter, header)
 	if err != nil {
-		return errorbehavior.WrapRetryable(fmt.Errorf("mail.CreateSingleInlineWriter() failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("mail.CreateSingleInlineWriter() failed: %s", err))
 	}
 	defer dataBodyWriter.Close()
 
 	_, err = io.Copy(dataBodyWriter, strings.NewReader(msg))
 	if err != nil {
-		return errorbehavior.WrapRetryable(fmt.Errorf("io.Copy() failed: %s", err))
+		return workerpool.ErrorWrapRetryable(fmt.Errorf("io.Copy() failed: %s", err))
 	}
 
 	return nil

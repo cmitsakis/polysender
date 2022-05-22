@@ -16,7 +16,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"go.polysender.org/internal/dbutil"
-	"go.polysender.org/internal/errorbehavior"
 	"go.polysender.org/internal/gateway"
 	"go.polysender.org/internal/gateway/email"
 	"go.polysender.org/internal/gateway/sms/android"
@@ -320,7 +319,7 @@ func run(ctx context.Context, b Broadcast, db *bolt.DB, loggerInfo, loggerDebug 
 			if errSend == nil {
 				loggerDebugRunIA.Printf("message sent to %v\n", c.Recipient)
 				sent = 2 // message sent
-			} else if errorbehavior.IsRetryable(errSend) {
+			} else if workerpool.ErrorIsRetryable(errSend) {
 				loggerDebugRunIA.Printf("send failed with retryable error: %s\n", errSend)
 				sent = 0 // message not sent
 			} else {
