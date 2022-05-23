@@ -299,12 +299,13 @@ func showBroadcastWizard1(w fyne.Window, refreshChan chan struct{}) {
 		}
 		var err error
 		var contacts []broadcast.Contact
-		if fileTypeRadio.Selected == optionFileTypeSingleColumn {
+		switch fileTypeRadio.Selected {
+		case optionFileTypeSingleColumn:
 			contacts, err = broadcast.ReadContactsFromReader(strings.NewReader(fileContent))
 			if err != nil {
 				return logAndReturnError(fmt.Errorf("Error reading file: %s", err))
 			}
-		} else if fileTypeRadio.Selected == optionFileTypeCSV {
+		case optionFileTypeCSV:
 			// input: delimiter
 			var delimiter rune
 			if len(delimiterEntry.Text) > 0 {
@@ -333,7 +334,7 @@ func showBroadcastWizard1(w fyne.Window, refreshChan chan struct{}) {
 			if len(contacts) == 0 {
 				return logAndReturnError(fmt.Errorf("no contacts found on file"))
 			}
-		} else {
+		default:
 			return logAndReturnError(fmt.Errorf("Please select file type"))
 		}
 		// start new goroutine, otherwise it won't show
